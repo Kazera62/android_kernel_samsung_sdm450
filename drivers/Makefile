@@ -185,5 +185,3 @@ obj-$(CONFIG_SENSORS_SSC)	+= sensors/
 obj-$(CONFIG_TEE)		+= tee/
 obj-$(CONFIG_AFC)		+= afc/
 obj-$(CONFIG_ADSP_FACTORY)	+= adsp_factory/
-obj-$(CONFIG_PRIMA_WLAN)	+= prima/
-obj-$(CONFIG_PRONTO_WLAN)	+= prima/
