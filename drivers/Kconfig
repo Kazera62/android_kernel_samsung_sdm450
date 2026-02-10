@@ -218,4 +218,6 @@ source "drivers/afc/Kconfig"
 
 source "drivers/adsp_factory/Kconfig"
 
+source "drivers/staging/prima/Kconfig"
+
 endmenu
