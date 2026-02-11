@@ -783,8 +783,13 @@ resizefs_out:
 		return ext4_ext_precache(inode);
 
 	case EXT4_IOC_SET_ENCRYPTION_POLICY:
+<<<<<<< HEAD
 //		if (!ext4_has_feature_encrypt(sb))
 //			return -EOPNOTSUPP;
+=======
+		if (!ext4_has_feature_encrypt(sb))
+			return -EOPNOTSUPP;
+>>>>>>> 84e8b2ae1f23cb05201a0797d312445761a204db
 		return fscrypt_ioctl_set_policy(filp, (const void __user *)arg);
 
 	case EXT4_IOC_GET_ENCRYPTION_PWSALT: {
