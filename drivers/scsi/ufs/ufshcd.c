@@ -7100,13 +7100,17 @@ static int ufshcd_abort(struct scsi_cmnd *cmd)
 {
 	struct Scsi_Host *host;
 	struct ufs_hba *hba;
+	unsigned int tag;
 	unsigned long flags;
 	int err = 0;
+	u8 resp = 0xF;
+	struct ufshcd_lrb *lrbp;
 	int poll_cnt;
 	u32 reg;
 
 	host = cmd->device->host;
 	hba = shost_priv(host);
+	tag = cmd->request->tag;
 	if (!ufshcd_valid_tag(hba, tag)) {
 		dev_err(hba->dev,
 			"%s: invalid command tag %d: cmd=0x%p, cmd->request=0x%p",
