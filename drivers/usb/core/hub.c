@@ -4857,11 +4857,8 @@ static void hub_port_connect(struct usb_hub *hub, int port1, u16 portstatus,
 	struct usb_port *port_dev = hub->ports[port1 - 1];
 	struct usb_device *udev = port_dev->child;
 	static int unreliable_port = -1;
-<<<<<<< HEAD
 	enum usb_device_speed dev_speed = USB_SPEED_UNKNOWN;
-=======
 	bool retry_locked;
->>>>>>> 4fb80e1e38eed3be9728ad821e46d91ba6ac5754
 
 	/* Disconnect any existing devices under this port */
 	if (udev) {
