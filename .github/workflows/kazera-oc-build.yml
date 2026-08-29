@@ -1,0 +1,50 @@
+name: Kazera SDM450 OC build
+
+on:
+  push:
+    branches:
+      - kazera-oc-2.4-800
+  workflow_dispatch:
+
+env:
+  CPU_OC_MHZ: 2400
+  GPU_OC_MHZ: 800
+  KSU_TAG: v1.1.1
+  DEFCONFIG: a11q_open_defconfig
+  JOBS: 4
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev python3 rsync cpio zip device-tree-compiler
+
+      - name: Make scripts executable
+        run: chmod +x scripts/kazera_oc_apply.sh scripts/setup_kernelsu_next.sh scripts/kazera_oc_verify.sh scripts/build_kazera_oc.sh
+
+      - name: Build
+        run: ./scripts/build_kazera_oc.sh
+
+      - name: Show kernel identity
+        run: |
+          grep -E '^(CONFIG_LOCALVERSION|CONFIG_DEFAULT_HOSTNAME|CONFIG_KSU=|CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=)' out-kazera-oc/.config
+
+      - name: Upload kernel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kazera-sdm450-oc
+          path: |
+            out-kazera-oc/arch/arm64/boot/Image*
+            out-kazera-oc/arch/arm64/boot/dts/**/*.dtb
+            out-kazera-oc/arch/arm64/boot/dts/**/*.dtbo
+            out-kazera-oc/.config
+          if-no-files-found: error
