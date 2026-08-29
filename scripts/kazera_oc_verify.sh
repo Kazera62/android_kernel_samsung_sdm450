@@ -1,0 +1,40 @@
+#!/bin/bash
+set -euo pipefail
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+CPU_OC_MHZ="${CPU_OC_MHZ:-2400}"
+GPU_OC_MHZ="${GPU_OC_MHZ:-800}"
+CPU_OC_HZ=$((CPU_OC_MHZ * 1000000))
+GPU_OC_HZ=$((GPU_OC_MHZ * 1000000))
+CPU_OC_KHZ=$((CPU_OC_MHZ * 1000))
+
+fail(){ echo "VERIFY-FAIL: $*" >&2; exit 1; }
+pass(){ echo "VERIFY-OK: $*"; }
+
+CPUCLK="$ROOT/drivers/clk/msm/clock-cpu-8953.c"
+SOC="$ROOT/arch/arm64/boot/dts/qcom/msm8953.dtsi"
+GCC="$ROOT/drivers/clk/msm/clock-gcc-8953.c"
+GPU="$ROOT/arch/arm64/boot/dts/qcom/msm8953-gpu.dtsi"
+
+[ -f "$CPUCLK" ] || fail "$CPUCLK missing"
+[ -f "$SOC" ] || fail "$SOC missing"
+[ -f "$GCC" ] || fail "$GCC missing"
+[ -f "$GPU" ] || fail "$GPU missing"
+
+grep -q ".max_rate = ${CPU_OC_HZ}UL" "$CPUCLK" || fail "CPU PLL ceiling not ${CPU_OC_MHZ}MHz"
+for b in 0 2 6 7; do
+    grep -A20 "qcom,speed${b}-bin-v0-cl" "$SOC" | grep -q "${CPU_OC_HZ}" || fail "CPU speed-bin ${b} lacks ${CPU_OC_MHZ}MHz"
+done
+grep -A20 'qcom,cpufreq-table =' "$SOC" | grep -q "${CPU_OC_KHZ}" || fail "cpufreq table lacks ${CPU_OC_MHZ}MHz"
+grep -q "F_MM( ${GPU_OC_HZ}," "$GCC" || fail "GPU GCC table lacks ${GPU_OC_MHZ}MHz"
+grep -A12 'qcom,gfxfreq-corner =' "$SOC" | grep -q "${GPU_OC_HZ}" || fail "GPU corner map lacks ${GPU_OC_MHZ}MHz"
+grep -A6 'qcom,gpu-pwrlevel@0' "$GPU" | grep -q "qcom,gpu-freq = <${GPU_OC_HZ}>;" || fail "GPU Turbo pwrlevel is not ${GPU_OC_MHZ}MHz"
+
+if [ -f "$ROOT/.config" ]; then
+    grep -q '^CONFIG_KSU=y$' "$ROOT/.config" || fail "CONFIG_KSU=y missing from .config"
+    grep -q '^CONFIG_OVERLAY_FS=y$' "$ROOT/.config" || fail "CONFIG_OVERLAY_FS=y missing"
+    grep -q '^CONFIG_KPROBES=y$' "$ROOT/.config" || fail "CONFIG_KPROBES=y missing"
+fi
+
+pass "CPU ${CPU_OC_MHZ}MHz path present in PLL + OPP/speed-bin + cpufreq"
+pass "GPU ${GPU_OC_MHZ}MHz path present in GCC + corner map + KGSL powerlevel"
