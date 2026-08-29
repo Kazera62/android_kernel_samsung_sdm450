@@ -1,0 +1,97 @@
+name: Kazera SDM450 OC build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - kazera-oc-2.4-800
+
+permissions:
+  contents: read
+
+env:
+  CPU_OC_MHZ: 2400
+  GPU_OC_MHZ: 800
+  KSU_TAG: v1.1.1
+  DEFCONFIG: a11q_open_defconfig
+  JOBS: 4
+  CLANG_BIN: /usr/lib/llvm-14/bin
+  GCC64_BIN: /usr/bin
+  GCC32_BIN: /usr/bin
+  DTC_EXT: /usr/bin/dtc
+
+jobs:
+  build:
+    name: Build SDM450 OC kernel
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout OC branch
+        uses: actions/checkout@v4
+        with:
+          ref: kazera-oc-2.4-800
+          fetch-depth: 1
+
+      - name: Install host dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex libssl-dev libelf-dev python3 rsync cpio zip \
+            device-tree-compiler clang-14 lld-14 llvm-14 \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
+
+      - name: Make scripts executable
+        run: chmod +x scripts/kazera_oc_apply.sh scripts/setup_kernelsu_next.sh scripts/kazera_oc_verify.sh scripts/build_kazera_oc.sh
+
+      - name: Toolchain preflight
+        shell: bash
+        run: |
+          set -euxo pipefail
+          /usr/lib/llvm-14/bin/clang --version
+          /usr/lib/llvm-14/bin/ld.lld --version
+          aarch64-linux-gnu-gcc --version | head -n 1
+          arm-linux-gnueabihf-gcc --version | head -n 1
+          dtc --version
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export CC=/usr/lib/llvm-14/bin/clang
+          export HOSTCC=/usr/lib/llvm-14/bin/clang
+          export HOSTCXX=/usr/lib/llvm-14/bin/clang++
+          export HOSTLD=/usr/lib/llvm-14/bin/ld.lld
+          export LD=/usr/lib/llvm-14/bin/ld.lld
+          export AR=/usr/lib/llvm-14/bin/llvm-ar
+          export NM=/usr/lib/llvm-14/bin/llvm-nm
+          export OBJCOPY=/usr/lib/llvm-14/bin/llvm-objcopy
+          export OBJDUMP=/usr/lib/llvm-14/bin/llvm-objdump
+          export STRIP=/usr/lib/llvm-14/bin/llvm-strip
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabihf-
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          ./scripts/build_kazera_oc.sh
+
+      - name: Verify kernel
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -f out-kazera-oc/vmlinux
+          test -f out-kazera-oc/arch/arm64/boot/Image || \
+            test -f out-kazera-oc/arch/arm64/boot/Image.gz || \
+            test -f out-kazera-oc/arch/arm64/boot/Image.gz-dtb
+          OUT_CONFIG="$GITHUB_WORKSPACE/out-kazera-oc/.config" ./scripts/kazera_oc_verify.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kazera-sdm450-oc-2400-800
+          path: |
+            out-kazera-oc/arch/arm64/boot/Image*
+            out-kazera-oc/arch/arm64/boot/dts/**/*.dtb
+            out-kazera-oc/arch/arm64/boot/dts/**/*.dtbo
+            out-kazera-oc/vmlinux
+            out-kazera-oc/.config
+          if-no-files-found: error
