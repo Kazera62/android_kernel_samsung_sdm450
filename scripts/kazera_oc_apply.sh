@@ -48,14 +48,14 @@ def update_fmax_table(path, prop, freq, corner=8):
         raise SystemExit(f"{path}: {prop} contains no frequency/corner pairs")
     if any(f == freq for f, _ in pairs):
         return
-    last = pairs[-1][0]
-    if freq < last:
-        raise SystemExit(f"{path}: {prop} is descending; refusing to insert {freq}")
-    body = body.rstrip()
-    if not body.endswith(','):
-        body += ','
-    body += f'\n\t\t\t< {freq} {corner} >'
-    path.write_text(s[:m.start(2)] + body + m.group(3) + s[m.end(3):])
+
+    # Insert the OC point in frequency order. This matters for speed bins that
+    # already contain a higher factory OPP (for example 2208 MHz on speed7).
+    pairs.append((freq, corner))
+    pairs.sort(key=lambda x: x[0])
+    indent = '\t\t\t'
+    new_body = '\n' + ',\n'.join(f'{indent}< {f} {c} >' for f, c in pairs)
+    path.write_text(s[:m.start(2)] + new_body + m.group(3) + s[m.end(3):])
 
 
 def update_cpufreq_table(path, freq_khz):
