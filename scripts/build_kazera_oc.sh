@@ -5,8 +5,8 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 DEFCONFIG="${DEFCONFIG:-a11q_open_defconfig}"
 OUT="${OUT:-$ROOT/out-kazera-oc}"
 JOBS="${JOBS:-$(nproc)}"
-CPU_OC_MHZ="${CPU_OC_MHZ:-2400}"
-GPU_OC_MHZ="${GPU_OC_MHZ:-800}"
+CPU_OC_MHZ="${CPU_OC_MHZ:-2112}"
+GPU_OC_MHZ="${GPU_OC_MHZ:-700}"
 KSU_TAG="${KSU_TAG:-v1.1.1}"
 BUILD_HOST="${BUILD_HOST:-Kazera-Builder}"
 BUILD_USER="${BUILD_USER:-Kazera}"
@@ -72,11 +72,13 @@ make "${COMMON[@]}" "$DEFCONFIG"
 
 python3 - "$OUT/.config" <<'PY'
 from pathlib import Path
-import os, sys
+import os
+import sys
+
 p = Path(sys.argv[1])
 s = p.read_text()
 vals = {
-    'CONFIG_LOCALVERSION': f'"-Kazera-OC-{os.environ.get("CPU_OC_MHZ", "2400")}M-{os.environ.get("GPU_OC_MHZ", "800")}M"',
+    'CONFIG_LOCALVERSION': f'"-Kazera-OC-{os.environ.get("CPU_OC_MHZ", "2112")}M-{os.environ.get("GPU_OC_MHZ", "700")}M"',
     'CONFIG_DEFAULT_HOSTNAME': '"Kazera-Builder"',
     'CONFIG_KPROBES': 'y',
     'CONFIG_KSU': 'y',
