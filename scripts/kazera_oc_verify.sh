@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-CPU_OC_MHZ="${CPU_OC_MHZ:-2400}"
-GPU_OC_MHZ="${GPU_OC_MHZ:-800}"
+CPU_OC_MHZ="${CPU_OC_MHZ:-2112}"
+GPU_OC_MHZ="${GPU_OC_MHZ:-700}"
 CPU_OC_HZ=$((CPU_OC_MHZ * 1000000))
 GPU_OC_HZ=$((GPU_OC_MHZ * 1000000))
 CPU_OC_KHZ=$((CPU_OC_MHZ * 1000))
@@ -21,15 +21,25 @@ for f in "$CPUCLK" "$SOC" "$GCC" "$GPU"; do
     [ -f "$f" ] || fail "$f missing"
 done
 
-grep -q ".max_rate = ${CPU_OC_HZ}UL" "$CPUCLK" || fail "CPU PLL ceiling not ${CPU_OC_MHZ}MHz"
+# The base MSM8953 clock driver may expose a ceiling above the selected OC.
+max_rate=$(sed -n 's/.*\.max_rate = \([0-9][0-9]*\)UL.*/\1/p' "$CPUCLK" | head -n1)
+[ -n "$max_rate" ] || fail "CPU PLL max_rate not found"
+[ "$max_rate" -ge "$CPU_OC_HZ" ] || fail "CPU PLL ceiling below ${CPU_OC_MHZ}MHz"
+
 for b in 0 2 6 7; do
-    block=$(awk "/qcom,speed${b}-bin-v0-cl =/{flag=1; count=0} flag{print; count++} flag && count>=28{exit}" "$SOC")
-    printf '%s\n' "$block" | grep -q "${CPU_OC_HZ}" || fail "CPU speed-bin ${b} lacks ${CPU_OC_MHZ}MHz"
+    block=$(awk "/qcom,speed${b}-bin-v0-cl =/{flag=1} flag{print} flag && /;/{exit}" "$SOC")
+    printf '%s\n' "$block" | grep -Eq "< *${CPU_OC_HZ} +8 *>|< *${CPU_OC_HZ} +[89] *>" \
+        || fail "CPU speed-bin ${b} lacks ${CPU_OC_MHZ}MHz OC point"
 done
-grep -A20 'qcom,cpufreq-table =' "$SOC" | grep -q "${CPU_OC_KHZ}" || fail "cpufreq table lacks ${CPU_OC_MHZ}MHz"
-grep -q "F_MM( ${GPU_OC_HZ}," "$GCC" || fail "GPU GCC table lacks ${GPU_OC_MHZ}MHz"
-grep -A16 'qcom,gfxfreq-corner =' "$SOC" | grep -q "${GPU_OC_HZ}" || fail "GPU corner map lacks ${GPU_OC_MHZ}MHz"
-grep -A8 'qcom,gpu-pwrlevel@0' "$GPU" | grep -q "qcom,gpu-freq = <${GPU_OC_HZ}>;" || fail "GPU Turbo pwrlevel is not ${GPU_OC_MHZ}MHz"
+
+grep -A20 'qcom,cpufreq-table =' "$SOC" | grep -q "${CPU_OC_KHZ}" \
+    || fail "cpufreq table lacks ${CPU_OC_MHZ}MHz"
+grep -q "F_MM( ${GPU_OC_HZ}," "$GCC" \
+    || fail "GPU GCC table lacks ${GPU_OC_MHZ}MHz"
+grep -A16 'qcom,gfxfreq-corner =' "$SOC" | grep -q "${GPU_OC_HZ}" \
+    || fail "GPU corner map lacks ${GPU_OC_MHZ}MHz"
+grep -A8 'qcom,gpu-pwrlevel@0' "$GPU" | grep -q "qcom,gpu-freq = <${GPU_OC_HZ}>;" \
+    || fail "GPU Turbo pwrlevel is not ${GPU_OC_MHZ}MHz"
 
 [ -f "$CONFIG_FILE" ] || fail "generated config missing: $CONFIG_FILE"
 grep -q '^CONFIG_KSU=y$' "$CONFIG_FILE" || fail "CONFIG_KSU=y missing from generated config"
