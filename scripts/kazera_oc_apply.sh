@@ -90,7 +90,7 @@ for bin_id in ('0', '2', '6', '7'):
 
 # CCI = 40% CPU clock, rounded to the nearest 19.2 MHz PLL step.
 cci_step = 19200000
-cci_hz = ((cpu_hz * 4 + 5 * 10 * cci_step) // (10 * cci_step)) * cci_step
+cci_hz = ((cpu_hz * 4 + 5 * cci_step) // (10 * cci_step)) * cci_step
 for bin_id in ('0', '2', '6', '7'):
     update_fmax_table(soc, f'qcom,speed{bin_id}-bin-v0-cci', cci_hz, 8)
 
