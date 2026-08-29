@@ -12,31 +12,54 @@ env:
   KSU_TAG: v1.1.1
   DEFCONFIG: a11q_open_defconfig
   JOBS: 4
+  CLANG_BIN: /usr/lib/llvm-14/bin
+  GCC64_BIN: /usr/bin
+  GCC32_BIN: /usr/bin
+  DTC_EXT: /usr/bin/dtc
+  CROSS_COMPILE_PREFIX: aarch64-linux-gnu-
+  CROSS_COMPILE_ARM32_PREFIX: arm-linux-gnueabihf-
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: kazera-oc-2.4-800
           fetch-depth: 1
 
       - name: Install host dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison flex libssl-dev libelf-dev python3 rsync cpio zip device-tree-compiler
+          sudo apt-get install -y \
+            bc bison flex libssl-dev libelf-dev python3 rsync cpio zip \
+            device-tree-compiler clang-14 lld-14 llvm-14 \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
 
       - name: Make scripts executable
         run: chmod +x scripts/kazera_oc_apply.sh scripts/setup_kernelsu_next.sh scripts/kazera_oc_verify.sh scripts/build_kazera_oc.sh
 
+      - name: Toolchain preflight
+        run: |
+          set -eux
+          /usr/lib/llvm-14/bin/clang --version
+          /usr/lib/llvm-14/bin/ld.lld --version
+          aarch64-linux-gnu-gcc --version | head -n1
+          arm-linux-gnueabihf-gcc --version | head -n1
+          dtc --version
+
       - name: Build
         run: ./scripts/build_kazera_oc.sh
 
+      - name: Verify generated kernel
+        run: |
+          OUT_CONFIG="$GITHUB_WORKSPACE/out-kazera-oc/.config" ./scripts/kazera_oc_verify.sh
+
       - name: Show kernel identity
         run: |
-          grep -E '^(CONFIG_LOCALVERSION|CONFIG_DEFAULT_HOSTNAME|CONFIG_KSU=|CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=)' out-kazera-oc/.config
+          grep -E '^(CONFIG_LOCALVERSION|CONFIG_DEFAULT_HOSTNAME|CONFIG_KSU=|CONFIG_KSU_KPROBES_HOOK=|CONFIG_KSU_LSM_SECURITY_HOOKS=|CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=)' out-kazera-oc/.config
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
@@ -46,5 +69,6 @@ jobs:
             out-kazera-oc/arch/arm64/boot/Image*
             out-kazera-oc/arch/arm64/boot/dts/**/*.dtb
             out-kazera-oc/arch/arm64/boot/dts/**/*.dtbo
+            out-kazera-oc/vmlinux
             out-kazera-oc/.config
           if-no-files-found: error
