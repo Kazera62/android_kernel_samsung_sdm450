@@ -1,17 +1,17 @@
-name: Kazera SDM450 OC build
+name: Kazera SDM450 stable OC build
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - kazera-oc-2.4-800
+      - kazera-oc-stable
 
 permissions:
   contents: read
 
 env:
-  CPU_OC_MHZ: 2400
-  GPU_OC_MHZ: 800
+  CPU_OC_MHZ: 2112
+  GPU_OC_MHZ: 700
   KSU_TAG: v1.1.1
   DEFCONFIG: a11q_open_defconfig
   JOBS: 4
@@ -24,14 +24,14 @@ env:
 
 jobs:
   build:
-    name: Build SDM450 OC kernel
+    name: Build SDM450 stable OC kernel
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-      - name: Checkout
+      - name: Checkout stable OC branch
         uses: actions/checkout@v4
         with:
-          ref: kazera-oc-2.4-800
+          ref: kazera-oc-stable
           fetch-depth: 1
 
       - name: Install host dependencies
@@ -45,7 +45,6 @@ jobs:
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
 
       - name: Make scripts executable
-        shell: bash
         run: chmod +x scripts/kazera_oc_apply.sh scripts/setup_kernelsu_next.sh scripts/kazera_oc_verify.sh scripts/build_kazera_oc.sh
 
       - name: Toolchain preflight
@@ -97,7 +96,7 @@ jobs:
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kazera-sdm450-oc-2400-800
+          name: kazera-sdm450-oc-2112-700
           path: |
             out-kazera-oc/arch/arm64/boot/Image*
             out-kazera-oc/arch/arm64/boot/dts/**/*.dtb
