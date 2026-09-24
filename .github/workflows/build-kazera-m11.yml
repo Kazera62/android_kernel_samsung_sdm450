@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - kazera-m11-kernel
+  pull_request:
+    branches:
+      - lineage-20
   workflow_dispatch:
 
 permissions:
