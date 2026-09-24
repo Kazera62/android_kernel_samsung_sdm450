@@ -8,14 +8,113 @@ on:
     branches:
       - lineage-20
   workflow_dispatch:
+    inputs:
+      root_impl:
+        description: "Root implementation"
+        type: choice
+        required: true
+        default: none
+        options:
+          - none
+          - kernelsu-next
+          - sukisu-ultra
+      kernelsu_next_ref:
+        description: "KernelSU Next reference for legacy 4.9 kernels"
+        type: choice
+        required: true
+        default: legacy
+        options:
+          - legacy
+          - dev
+      sukisu_ultra_ref:
+        description: "SukiSU Ultra integration tree"
+        type: choice
+        required: true
+        default: builtin
+        options:
+          - builtin
+          - main
+      clang:
+        description: "Clang toolchain"
+        type: choice
+        required: true
+        default: r365631c
+        options:
+          - r365631c
+          - r370808
+          - r416183b
+      performance_profile:
+        description: "Kernel performance profile"
+        type: choice
+        required: true
+        default: performance
+        options:
+          - performance
+          - balanced
+          - latency
+      cpu_governor:
+        description: "Default CPU frequency governor"
+        type: choice
+        required: true
+        default: performance
+        options:
+          - performance
+          - schedutil
+          - interactive
+          - ondemand
+          - stock
+      io_scheduler:
+        description: "Default block I/O scheduler"
+        type: choice
+        required: true
+        default: cfq
+        options:
+          - cfq
+          - noop
+          - deadline
+          - stock
+      tcp_congestion:
+        description: "Default TCP congestion control"
+        type: choice
+        required: true
+        default: bbr
+        options:
+          - bbr
+          - cubic
+          - stock
+      cortex_a53_tune:
+        description: "Tune kernel C code for Cortex-A53"
+        type: choice
+        required: true
+        default: on
+        options:
+          - on
+          - off
 
 permissions:
   contents: read
 
+env:
+  ROOT_IMPL: ${{ github.event.inputs.root_impl || 'none' }}
+  KSUN_REF: ${{ github.event.inputs.kernelsu_next_ref || 'legacy' }}
+  SUKISU_REF: ${{ github.event.inputs.sukisu_ultra_ref || 'builtin' }}
+  CLANG_VERSION: ${{ github.event.inputs.clang || 'r365631c' }}
+  PERF_PROFILE: ${{ github.event.inputs.performance_profile || 'performance' }}
+  CPU_GOV: ${{ github.event.inputs.cpu_governor || 'performance' }}
+  IO_SCHED: ${{ github.event.inputs.io_scheduler || 'cfq' }}
+  TCP_CONG: ${{ github.event.inputs.tcp_congestion || 'bbr' }}
+  CORTEX_TUNE: ${{ github.event.inputs.cortex_a53_tune || 'on' }}
+  ARCH: arm64
+  SUBARCH: arm64
+  CC: clang
+  CLANG_TRIPLE: aarch64-linux-gnu-
+  CROSS_COMPILE: aarch64-linux-gnu-
+
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
+
     steps:
       - name: Checkout kernel
         uses: actions/checkout@v4
@@ -24,54 +123,243 @@ jobs:
           fetch-depth: 1
 
       - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential flex libelf-dev libssl-dev device-tree-compiler cpio gzip binutils-aarch64-linux-gnu python3 rsync
-
-      - name: Install Android Clang r365631c
         shell: bash
         run: |
           set -euxo pipefail
-          TOOLCHAIN="$HOME/clang-r365631c"
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex git libelf-dev libssl-dev device-tree-compiler cpio gzip binutils-aarch64-linux-gnu python3 rsync curl
+
+      - name: Select and install Clang toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+          TOOLCHAIN="$HOME/clang-$CLANG_VERSION"
+
+          case "$CLANG_VERSION" in
+            r365631c)
+              CLANG_BRANCH="android11-release"
+              ;;
+            r370808)
+              CLANG_BRANCH="android11-qpr1-s2-release"
+              ;;
+            r416183b)
+              CLANG_BRANCH="android12-qpr3-s1-release"
+              ;;
+            *)
+              echo "Unsupported Clang selection: $CLANG_VERSION" >&2
+              exit 1
+              ;;
+          esac
+
           mkdir -p "$TOOLCHAIN"
-          curl -L --retry 5 --retry-delay 2 "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-release/clang-r365631c.tar.gz" -o /tmp/clang-r365631c.tar.gz
-          tar -xzf /tmp/clang-r365631c.tar.gz -C "$TOOLCHAIN"
+          curl -L --retry 5 --retry-delay 2 \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/$CLANG_BRANCH/$CLANG_VERSION.tar.gz" \
+            -o "/tmp/$CLANG_VERSION.tar.gz"
+
+          tar -xzf "/tmp/$CLANG_VERSION.tar.gz" -C "$TOOLCHAIN"
           echo "$TOOLCHAIN/bin" >> "$GITHUB_PATH"
+
+          echo "Using Clang $CLANG_VERSION from $CLANG_BRANCH"
           clang --version
           ld.lld --version
 
-      - name: Configure
-        env:
-          ARCH: arm64
-          SUBARCH: arm64
-          CC: clang
-          CLANG_TRIPLE: aarch64-linux-gnu-
-          CROSS_COMPILE: aarch64-linux-gnu-
+      - name: Integrate selected root implementation
+        if: env.ROOT_IMPL != 'none'
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          case "$ROOT_IMPL" in
+            kernelsu-next)
+              curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/$KSUN_REF/kernel/setup.sh" | bash -s "$KSUN_REF"
+              ;;
+            sukisu-ultra)
+              curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/$SUKISU_REF/kernel/setup.sh" | bash -s "$SUKISU_REF"
+              ;;
+            *)
+              echo "Unsupported root implementation: $ROOT_IMPL" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Configure kernel
+        shell: bash
         run: |
           set -euxo pipefail
           rm -rf out
+
           make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" a11q_open_defconfig
+
+          scripts/config --file out/.config --enable ARCH_ZQL1871
+          scripts/config --file out/.config --enable ARCH_SDM450
+          scripts/config --file out/.config --enable ARCH_MSM8953
+
+          case "$ROOT_IMPL" in
+            none)
+              ;;
+            kernelsu-next|sukisu-ultra)
+              scripts/config --file out/.config --enable KSU
+              ;;
+            *)
+              echo "Unsupported root implementation: $ROOT_IMPL" >&2
+              exit 1
+              ;;
+          esac
+
+          case "$PERF_PROFILE" in
+            performance)
+              scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
+              scripts/config --file out/.config --enable CPU_BOOST
+              scripts/config --file out/.config --enable SCHED_AUTOGROUP
+              scripts/config --file out/.config --enable SCHED_TUNE
+              scripts/config --file out/.config --disable HZ_250 --disable HZ_300 --disable HZ_1000 --enable HZ_100 --set-val HZ 100
+              ;;
+            balanced)
+              scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
+              scripts/config --file out/.config --enable CPU_BOOST
+              scripts/config --file out/.config --enable SCHED_TUNE
+              scripts/config --file out/.config --disable HZ_250 --disable HZ_300 --disable HZ_1000 --enable HZ_100 --set-val HZ 100
+              ;;
+            latency)
+              scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
+              scripts/config --file out/.config --enable CPU_BOOST
+              scripts/config --file out/.config --enable SCHED_TUNE
+              scripts/config --file out/.config --disable HZ_100 --disable HZ_250 --disable HZ_1000 --enable HZ_300 --set-val HZ 300
+              ;;
+            *)
+              echo "Unsupported performance profile: $PERF_PROFILE" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$CPU_GOV" != "stock" ]; then
+            for gov in PERFORMANCE POWERSAVE USERSPACE ONDEMAND CONSERVATIVE SCHEDUTIL INTERACTIVE; do
+              scripts/config --file out/.config --disable "CPU_FREQ_GOV_$gov" || true
+              scripts/config --file out/.config --disable "CPU_FREQ_DEFAULT_GOV_$gov" || true
+            done
+          fi
+
+          case "$CPU_GOV" in
+            performance)
+              scripts/config --file out/.config --enable CPU_FREQ_GOV_PERFORMANCE
+              scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_PERFORMANCE
+              ;;
+            schedutil)
+              scripts/config --file out/.config --enable CPU_FREQ_GOV_SCHEDUTIL
+              scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_SCHEDUTIL
+              ;;
+            interactive)
+              scripts/config --file out/.config --enable CPU_FREQ_GOV_INTERACTIVE
+              scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_INTERACTIVE
+              ;;
+            ondemand)
+              scripts/config --file out/.config --enable CPU_FREQ_GOV_ONDEMAND
+              scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_ONDEMAND
+              ;;
+            stock)
+              ;;
+            *)
+              echo "Unsupported CPU governor: $CPU_GOV" >&2
+              exit 1
+              ;;
+          esac
+
+          case "$IO_SCHED" in
+            cfq)
+              scripts/config --file out/.config --enable IOSCHED_CFQ
+              scripts/config --file out/.config --disable IOSCHED_NOOP --disable IOSCHED_DEADLINE
+              scripts/config --file out/.config --enable DEFAULT_CFQ
+              scripts/config --file out/.config --disable DEFAULT_NOOP --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --set-str DEFAULT_IOSCHED cfq
+              ;;
+            noop)
+              scripts/config --file out/.config --enable IOSCHED_NOOP
+              scripts/config --file out/.config --disable IOSCHED_CFQ --disable IOSCHED_DEADLINE
+              scripts/config --file out/.config --disable DEFAULT_CFQ
+              scripts/config --file out/.config --enable DEFAULT_NOOP
+              scripts/config --file out/.config --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --set-str DEFAULT_IOSCHED noop
+              ;;
+            deadline)
+              scripts/config --file out/.config --enable IOSCHED_DEADLINE
+              scripts/config --file out/.config --disable IOSCHED_CFQ --disable IOSCHED_NOOP
+              scripts/config --file out/.config --disable DEFAULT_CFQ
+              scripts/config --file out/.config --disable DEFAULT_NOOP
+              scripts/config --file out/.config --enable DEFAULT_DEADLINE
+              scripts/config --file out/.config --set-str DEFAULT_IOSCHED deadline
+              ;;
+            stock)
+              ;;
+            *)
+              echo "Unsupported I/O scheduler: $IO_SCHED" >&2
+              exit 1
+              ;;
+          esac
+
+          case "$TCP_CONG" in
+            bbr)
+              scripts/config --file out/.config --enable TCP_CONG_ADVANCED
+              scripts/config --file out/.config --enable TCP_CONG_BBR
+              scripts/config --file out/.config --enable NET_SCH_FQ
+              scripts/config --file out/.config --enable DEFAULT_BBR
+              scripts/config --file out/.config --disable DEFAULT_CUBIC
+              scripts/config --file out/.config --set-str DEFAULT_TCP_CONG bbr
+              ;;
+            cubic)
+              scripts/config --file out/.config --enable TCP_CONG_ADVANCED
+              scripts/config --file out/.config --enable TCP_CONG_CUBIC
+              scripts/config --file out/.config --disable TCP_CONG_BBR
+              scripts/config --file out/.config --disable DEFAULT_BBR
+              scripts/config --file out/.config --enable DEFAULT_CUBIC
+              scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic
+              ;;
+            stock)
+              ;;
+            *)
+              echo "Unsupported TCP congestion selection: $TCP_CONG" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$CORTEX_TUNE" = "on" ]; then
+            KCFLAGS="-mcpu=cortex-a53"
+          else
+            KCFLAGS=""
+          fi
+
+          printf '%s\n' "KCFLAGS=$KCFLAGS" > out/kazera-build-env.txt
+
           make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" olddefconfig
-          grep -E "^(CONFIG_ARCH_ZQL1871=y|CONFIG_ARCH_SDM450=y|CONFIG_ARCH_MSM8953=y|CONFIG_LOCALVERSION=)" out/.config
-          test "$(grep -c "^CONFIG_ARCH_ZQL1871=y$" out/.config)" -eq 1
-          test "$(grep -c "^CONFIG_ARCH_SDM450=y$" out/.config)" -eq 1
-          test "$(grep -c "^CONFIG_ARCH_MSM8953=y$" out/.config)" -eq 1
+
+          grep -E '^(CONFIG_KSU=|CONFIG_ARCH_ZQL1871=|CONFIG_ARCH_SDM450=|CONFIG_ARCH_MSM8953=|CONFIG_HZ=|CONFIG_CPU_FREQ_DEFAULT_GOV=|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_IOSCHED=|CONFIG_LOCALVERSION=)' out/.config || true
+
+          test "$(grep -c '^CONFIG_ARCH_ZQL1871=y$' out/.config)" -eq 1
+          test "$(grep -c '^CONFIG_ARCH_SDM450=y$' out/.config)" -eq 1
+          test "$(grep -c '^CONFIG_ARCH_MSM8953=y$' out/.config)" -eq 1
+
+          if [ "$ROOT_IMPL" != "none" ]; then
+            test "$(grep -c '^CONFIG_KSU=y$' out/.config)" -eq 1
+          fi
 
       - name: Build kernel and DTBs
-        env:
-          ARCH: arm64
-          SUBARCH: arm64
-          CC: clang
-          CLANG_TRIPLE: aarch64-linux-gnu-
-          CROSS_COMPILE: aarch64-linux-gnu-
+        shell: bash
         run: |
           set -euxo pipefail
-          make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" dtbs -j"$(nproc)"
-          make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" Image.gz vmlinux System.map -j"$(nproc)"
+
+          if [ "$CORTEX_TUNE" = "on" ]; then
+            KCFLAGS="-mcpu=cortex-a53"
+          else
+            KCFLAGS=""
+          fi
+
+          make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" KCFLAGS="$KCFLAGS" dtbs -j"$(nproc)"
+          make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" KCFLAGS="$KCFLAGS" Image.gz vmlinux System.map -j"$(nproc)"
+
           test -s out/arch/arm64/boot/Image.gz
           test -s out/vmlinux
           test -s out/System.map
           test -d out/arch/arm64/boot/dts/samsung
+
           find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print | sort
 
       - name: Package artifacts
@@ -80,31 +368,47 @@ jobs:
           set -euxo pipefail
           rm -rf dist
           mkdir -p dist/dtb/samsung
+
           cp out/arch/arm64/boot/Image.gz dist/Image.gz
           cp out/vmlinux dist/vmlinux
           cp out/System.map dist/System.map
           cp out/.config dist/.config
+          cp out/kazera-build-env.txt dist/kazera-build-env.txt
+
           find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -exec cp {} dist/dtb/samsung/ \;
+
           {
             echo "kernel_repo=https://github.com/Kazera62/android_kernel_samsung_sdm450"
             echo "kernel_branch=$GITHUB_REF_NAME"
             echo "kernel_commit=$GITHUB_SHA"
+            echo "root_impl=$ROOT_IMPL"
+            echo "kernelsu_next_ref=$KSUN_REF"
+            echo "sukisu_ultra_ref=$SUKISU_REF"
+            echo "clang=$CLANG_VERSION"
+            echo "performance_profile=$PERF_PROFILE"
+            echo "cpu_governor=$CPU_GOV"
+            echo "io_scheduler=$IO_SCHED"
+            echo "tcp_congestion=$TCP_CONG"
+            echo "cortex_a53_tune=$CORTEX_TUNE"
             echo "base_config=a11q_open_defconfig"
             echo "target=Samsung SM-M11 / SM-A11 (SDM450)"
             echo "kernel_release=$(make -s O=out kernelrelease)"
           } > dist/BUILD_INFO.txt
-          (cd dist && sha256sum Image.gz vmlinux System.map .config BUILD_INFO.txt dtb/samsung/* 2>/dev/null || true) > dist/SHA256SUMS
-          tar -C dist -czf "kazera-m11-kernel-${GITHUB_SHA::7}.tar.gz" .
+
+          (cd dist && sha256sum Image.gz vmlinux System.map .config BUILD_INFO.txt kazera-build-env.txt dtb/samsung/* 2>/dev/null || true) > dist/SHA256SUMS
+
+          tar -C dist -czf "kazera-m11-kernel-$(git rev-parse --short=7 HEAD)-$ROOT_IMPL-$CLANG_VERSION.tar.gz" .
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kazera-m11-kernel
+          name: kazera-m11-kernel-${{ github.run_number }}
           path: |
             dist/Image.gz
             dist/vmlinux
             dist/System.map
             dist/.config
+            dist/kazera-build-env.txt
             dist/BUILD_INFO.txt
             dist/SHA256SUMS
             dist/kazera-m11-kernel-*.tar.gz
