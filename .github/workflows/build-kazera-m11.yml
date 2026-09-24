@@ -18,40 +18,61 @@ on:
           - none
           - kernelsu-next
           - sukisu-ultra
-      kernelsu_next_ref:
-        description: "KernelSU Next reference for legacy 4.9 kernels"
+          - resukisu
+      kpm:
+        description: "SukiSU KPM (kernel 4.9 set_memory backport)"
         type: choice
         required: true
-        default: legacy
+        default: off
         options:
-          - legacy
-          - dev
-      sukisu_ultra_ref:
-        description: "SukiSU Ultra integration tree"
+          - off
+          - on
+      susfs:
+        description: "ReSukiSU SUSFS for kernel 4.9"
         type: choice
         required: true
-        default: builtin
+        default: off
         options:
-          - builtin
-          - main
+          - off
+          - on
+      susfs_log:
+        description: "SUSFS kernel logging"
+        type: choice
+        required: true
+        default: off
+        options:
+          - off
+          - on
       clang:
-        description: "Clang toolchain"
+        description: "Android Clang toolchain"
         type: choice
         required: true
-        default: r365631c
+        default: r383902b
         options:
-          - r365631c
-          - r370808
+          - r383902b
           - r416183b
+          - r370808
+          - r365631c
       performance_profile:
-        description: "Kernel performance profile"
+        description: "Performance preset (HZ is configured separately)"
         type: choice
         required: true
         default: performance
         options:
+          - stock
           - performance
           - balanced
           - latency
+      hz:
+        description: "Kernel timer frequency"
+        type: choice
+        required: true
+        default: 1000
+        options:
+          - 100
+          - 250
+          - 300
+          - 1000
       cpu_governor:
         description: "Default CPU frequency governor"
         type: choice
@@ -82,6 +103,22 @@ on:
           - bbr
           - cubic
           - stock
+      zram_writeback:
+        description: "zRAM writeback"
+        type: choice
+        required: true
+        default: on
+        options:
+          - on
+          - off
+      psi:
+        description: "Pressure Stall Information"
+        type: choice
+        required: true
+        default: off
+        options:
+          - on
+          - off
       cortex_a53_tune:
         description: "Tune kernel C code for Cortex-A53"
         type: choice
@@ -95,22 +132,26 @@ permissions:
   contents: read
 
 env:
-  ROOT_IMPL: ${{ github.event.inputs.root_impl || 'none' }}
-  KSUN_REF: ${{ github.event.inputs.kernelsu_next_ref || 'legacy' }}
-  SUKISU_REF: ${{ github.event.inputs.sukisu_ultra_ref || 'builtin' }}
-  CLANG_VERSION: ${{ github.event.inputs.clang || 'r365631c' }}
-  PERF_PROFILE: ${{ github.event.inputs.performance_profile || 'performance' }}
-  CPU_GOV: ${{ github.event.inputs.cpu_governor || 'performance' }}
-  IO_SCHED: ${{ github.event.inputs.io_scheduler || 'cfq' }}
-  TCP_CONG: ${{ github.event.inputs.tcp_congestion || 'bbr' }}
-  CORTEX_TUNE: ${{ github.event.inputs.cortex_a53_tune || 'on' }}
+  ROOT_IMPL: ${{ inputs.root_impl || 'none' }}
+  KPM_ENABLE: ${{ inputs.kpm || 'off' }}
+  SUSFS_ENABLE: ${{ inputs.susfs || 'off' }}
+  SUSFS_LOG: ${{ inputs.susfs_log || 'off' }}
+  CLANG_VERSION: ${{ inputs.clang || 'r383902b' }}
+  PERF_PROFILE: ${{ inputs.performance_profile || 'performance' }}
+  HZ_CHOICE: ${{ inputs.hz || '1000' }}
+  CPU_GOV: ${{ inputs.cpu_governor || 'performance' }}
+  IO_SCHED: ${{ inputs.io_scheduler || 'cfq' }}
+  TCP_CONG: ${{ inputs.tcp_congestion || 'bbr' }}
+  ZRAM_WB: ${{ inputs.zram_writeback || 'on' }}
+  PSI_ENABLE: ${{ inputs.psi || 'off' }}
+  CORTEX_TUNE: ${{ inputs.cortex_a53_tune || 'on' }}
   ARCH: arm64
   SUBARCH: arm64
   CC: clang
+  LD: ld.lld
   CLANG_TRIPLE: aarch64-linux-gnu-
   CROSS_COMPILE: aarch64-linux-gnu-
-
-jobs:
+  CROSS_COMPILE_ARM32: arm-linux-gnueabi-jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -127,42 +168,42 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential flex git libelf-dev libssl-dev device-tree-compiler cpio gzip binutils-aarch64-linux-gnu python3 rsync curl
+          sudo apt-get install -y bc bison build-essential flex git curl rsync \
+            libelf-dev libssl-dev device-tree-compiler cpio gzip \
+            binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi
 
       - name: Select and install Clang toolchain
         shell: bash
         run: |
           set -euxo pipefail
-          TOOLCHAIN="$HOME/clang-$CLANG_VERSION"
-
           case "$CLANG_VERSION" in
-            r365631c)
-              CLANG_BRANCH="android11-release"
-              ;;
-            r370808)
-              CLANG_BRANCH="android11-qpr1-s2-release"
+            r383902b|r370808|r365631c)
+              CLANG_BRANCH="android11-qpr3-release"
               ;;
             r416183b)
               CLANG_BRANCH="android12-qpr3-s1-release"
               ;;
             *)
-              echo "Unsupported Clang selection: $CLANG_VERSION" >&2
+              echo "Unsupported Clang: $CLANG_VERSION" >&2
               exit 1
               ;;
           esac
-
-          mkdir -p "$TOOLCHAIN"
-          curl -L --retry 5 --retry-delay 2 \
-            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/$CLANG_BRANCH/$CLANG_VERSION.tar.gz" \
-            -o "/tmp/$CLANG_VERSION.tar.gz"
-
-          tar -xzf "/tmp/$CLANG_VERSION.tar.gz" -C "$TOOLCHAIN"
-          echo "$TOOLCHAIN/bin" >> "$GITHUB_PATH"
-
-          echo "Using Clang $CLANG_VERSION from $CLANG_BRANCH"
+          TOOLCHAIN_ROOT="$HOME/clang-$CLANG_VERSION"
+          rm -rf "$TOOLCHAIN_ROOT" clang-toolchain
+          if ! git clone --depth=1 --filter=blob:none --sparse --branch "$CLANG_BRANCH" https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-toolchain; then
+            rm -rf clang-toolchain
+            git clone --depth=1 --sparse --branch "$CLANG_BRANCH" https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-toolchain
+          fi
+          git -C clang-toolchain sparse-checkout set "$CLANG_VERSION"
+          test -x "clang-toolchain/$CLANG_VERSION/bin/clang"
+          mv "clang-toolchain/$CLANG_VERSION" "$TOOLCHAIN_ROOT"
+          rm -rf clang-toolchain
+          echo "$TOOLCHAIN_ROOT/bin" >> "$GITHUB_PATH"
           clang --version
           ld.lld --version
-
+          aarch64-linux-gnu-gcc --version | head -n 1
+          arm-linux-gnueabi-gcc --version | head -n 1
       - name: Integrate selected root implementation
         if: env.ROOT_IMPL != 'none'
         shell: bash
