@@ -204,18 +204,37 @@ env:
           ld.lld --version
           aarch64-linux-gnu-gcc --version | head -n 1
           arm-linux-gnueabi-gcc --version | head -n 1
+      - name: Validate root feature combinations
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ "$KPM_ENABLE" = "on" ] && [ "$ROOT_IMPL" != "sukisu-ultra" ]; then
+            echo "KPM is wired to SukiSU-Ultra in this 4.9 workflow." >&2
+            exit 1
+          fi
+          if [ "$SUSFS_ENABLE" = "on" ] && [ "$ROOT_IMPL" != "resukisu" ]; then
+            echo "SUSFS is wired to ReSukiSU in this 4.9 workflow." >&2
+            exit 1
+          fi
+          if [ "$KPM_ENABLE" = "on" ] && [ "$SUSFS_ENABLE" = "on" ]; then
+            echo "Select either SukiSU-Ultra+KPM or ReSukiSU+SUSFS." >&2
+            exit 1
+          fi
+
       - name: Integrate selected root implementation
         if: env.ROOT_IMPL != 'none'
         shell: bash
         run: |
           set -euxo pipefail
-
           case "$ROOT_IMPL" in
             kernelsu-next)
-              curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/$KSUN_REF/kernel/setup.sh" | bash -s "$KSUN_REF"
+              curl -fLSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s legacy
               ;;
             sukisu-ultra)
-              curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/$SUKISU_REF/kernel/setup.sh" | bash -s "$SUKISU_REF"
+              curl -fLSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/builtin/kernel/setup.sh" | bash -s builtin
+              ;;
+            resukisu)
+              curl -fLSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s main
               ;;
             *)
               echo "Unsupported root implementation: $ROOT_IMPL" >&2
@@ -223,6 +242,33 @@ env:
               ;;
           esac
 
+      - name: Apply SukiSU compatibility and KPM patches
+        if: env.ROOT_IMPL == 'sukisu-ultra' && env.KPM_ENABLE == 'on'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -fL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/fe5053e603e20ce6ba97900da2c3c0229c7505d4/Patches/Patch/set_memory_to_49_and_low.patch" -o /tmp/set_memory_to_49_and_low.patch
+          git apply --check /tmp/set_memory_to_49_and_low.patch
+          git apply /tmp/set_memory_to_49_and_low.patch
+          curl -fL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/fe5053e603e20ce6ba97900da2c3c0229c7505d4/Patches/Patch/sukisu_ultra_fixed.patch" -o /tmp/sukisu_ultra_fixed.patch
+          git apply --check /tmp/sukisu_ultra_fixed.patch
+          git apply /tmp/sukisu_ultra_fixed.patch
+
+      - name: Apply ReSukiSU SUSFS 4.9 patches
+        if: env.ROOT_IMPL == 'resukisu' && env.SUSFS_ENABLE == 'on'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -fL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/fe5053e603e20ce6ba97900da2c3c0229c7505d4/Patches/Patch/susfs_patch_to_4.9.patch" -o /tmp/susfs_patch_to_4.9.patch
+          git apply --check /tmp/susfs_patch_to_4.9.patch
+          git apply /tmp/susfs_patch_to_4.9.patch
+          curl -fL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/fe5053e603e20ce6ba97900da2c3c0229c7505d4/Patches/susfs_inline_hook_patches.sh" -o /tmp/susfs_inline_hook_patches.sh
+          chmod +x /tmp/susfs_inline_hook_patches.sh
+          /tmp/susfs_inline_hook_patches.sh
+          test -s fs/susfs.c
+          test -s include/linux/susfs.h
+          test -s include/linux/susfs_def.h
+          grep -Rqs "CONFIG_KSU_SUSFS" fs/namespace.c fs/namei.c fs/stat.c fs/exec.c
       - name: Configure kernel
         shell: bash
         run: |
