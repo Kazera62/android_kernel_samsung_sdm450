@@ -160,7 +160,7 @@ jobs:
 
     steps:
       - name: Checkout kernel
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
         with:
           ref: lineage-20
           fetch-depth: 1
@@ -197,9 +197,10 @@ jobs:
             rm -rf clang-toolchain
             git clone --depth=1 --sparse --branch "$CLANG_BRANCH" https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-toolchain
           fi
-          git -C clang-toolchain sparse-checkout set "$CLANG_VERSION"
-          test -x "clang-toolchain/$CLANG_VERSION/bin/clang"
-          mv "clang-toolchain/$CLANG_VERSION" "$TOOLCHAIN_ROOT"
+          CLANG_DIR="clang-$CLANG_VERSION"
+          git -C clang-toolchain sparse-checkout set "$CLANG_DIR"
+          test -x "clang-toolchain/$CLANG_DIR/bin/clang"
+          mv "clang-toolchain/$CLANG_DIR" "$TOOLCHAIN_ROOT"
           rm -rf clang-toolchain
           echo "$TOOLCHAIN_ROOT/bin" >> "$GITHUB_PATH"
           clang --version
