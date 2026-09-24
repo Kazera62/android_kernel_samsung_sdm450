@@ -52,66 +52,10 @@ jobs:
           rm -rf out
           make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" a11q_open_defconfig
           make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" olddefconfig
-
-          grep -E '^(CONFIG_ARCH_ZQL1871=y|CONFIG_ARCH_SDM450=y|CONFIG_ARCH_MSM8953=y|CONFIG_LOCALVERSION=)' out/.config
-          test "$(grep -c '^CONFIG_ARCH_ZQL1871=y
-
-      - name: Build kernel and DTBs
-        env:
-          ARCH: arm64
-          SUBARCH: arm64
-          CC: clang
-          CLANG_TRIPLE: aarch64-linux-gnu-
-          CROSS_COMPILE: aarch64-linux-gnu-
-        run: |
-          set -euxo pipefail
-          make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" dtbs -j"$(nproc)"
-          make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" Image.gz vmlinux System.map -j"$(nproc)"
-          test -s out/arch/arm64/boot/Image.gz
-          test -s out/vmlinux
-          test -s out/System.map
-          find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name '*.dtb' -o -name '*.dtbo' \) -type f -print | sort
-
-      - name: Package artifacts
-        shell: bash
-        run: |
-          set -euxo pipefail
-          rm -rf dist
-          mkdir -p dist/dtb/samsung
-          cp out/arch/arm64/boot/Image.gz dist/Image.gz
-          cp out/vmlinux dist/vmlinux
-          cp out/System.map dist/System.map
-          cp out/.config dist/.config
-          find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name '*.dtb' -o -name '*.dtbo' \) -type f -exec cp {} dist/dtb/samsung/ \;
-          {
-            echo "kernel_repo=https://github.com/Kazera62/android_kernel_samsung_sdm450"
-            echo "kernel_branch=\${GITHUB_REF_NAME}"
-            echo "kernel_commit=\${GITHUB_SHA}"
-            echo "base_config=a11q_open_defconfig"
-            echo "target=Samsung SM-M11 / SM-A11 (SDM450)"
-            echo "kernel_release=\$(make -s O=out kernelrelease)"
-          } > dist/BUILD_INFO.txt
-          (cd dist && sha256sum Image.gz vmlinux System.map .config BUILD_INFO.txt dtb/samsung/* 2>/dev/null || true) > dist/SHA256SUMS
-          tar -C dist -czf "kazera-m11-kernel-\${GITHUB_SHA::7}.tar.gz" .
-
-      - name: Upload kernel artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: kazera-m11-kernel
-          path: |
-            dist/Image.gz
-            dist/vmlinux
-            dist/System.map
-            dist/.config
-            dist/BUILD_INFO.txt
-            dist/SHA256SUMS
-            dist/kazera-m11-kernel-*.tar.gz
-            dist/dtb/samsung/*.dtb
-            dist/dtb/samsung/*.dtbo
-          if-no-files-found: error
-          retention-days: 30
- out/.config)" -eq 1
-          test "$(grep -c '^CONFIG_ARCH_SDM450=y
+          grep -E "^(CONFIG_ARCH_ZQL1871=y|CONFIG_ARCH_SDM450=y|CONFIG_ARCH_MSM8953=y|CONFIG_LOCALVERSION=)" out/.config
+          test "$(grep -c "^CONFIG_ARCH_ZQL1871=y$" out/.config)" -eq 1
+          test "$(grep -c "^CONFIG_ARCH_SDM450=y$" out/.config)" -eq 1
+          test "$(grep -c "^CONFIG_ARCH_MSM8953=y$" out/.config)" -eq 1
 
       - name: Build kernel and DTBs
         env:
@@ -127,7 +71,8 @@ jobs:
           test -s out/arch/arm64/boot/Image.gz
           test -s out/vmlinux
           test -s out/System.map
-          find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name '*.dtb' -o -name '*.dtbo' \) -type f -print | sort
+          test -d out/arch/arm64/boot/dts/samsung
+          find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print | sort
 
       - name: Package artifacts
         shell: bash
@@ -139,130 +84,17 @@ jobs:
           cp out/vmlinux dist/vmlinux
           cp out/System.map dist/System.map
           cp out/.config dist/.config
-          find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name '*.dtb' -o -name '*.dtbo' \) -type f -exec cp {} dist/dtb/samsung/ \;
+          find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -exec cp {} dist/dtb/samsung/ \;
           {
             echo "kernel_repo=https://github.com/Kazera62/android_kernel_samsung_sdm450"
-            echo "kernel_branch=\${GITHUB_REF_NAME}"
-            echo "kernel_commit=\${GITHUB_SHA}"
+            echo "kernel_branch=$GITHUB_REF_NAME"
+            echo "kernel_commit=$GITHUB_SHA"
             echo "base_config=a11q_open_defconfig"
             echo "target=Samsung SM-M11 / SM-A11 (SDM450)"
-            echo "kernel_release=\$(make -s O=out kernelrelease)"
+            echo "kernel_release=$(make -s O=out kernelrelease)"
           } > dist/BUILD_INFO.txt
           (cd dist && sha256sum Image.gz vmlinux System.map .config BUILD_INFO.txt dtb/samsung/* 2>/dev/null || true) > dist/SHA256SUMS
-          tar -C dist -czf "kazera-m11-kernel-\${GITHUB_SHA::7}.tar.gz" .
-
-      - name: Upload kernel artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: kazera-m11-kernel
-          path: |
-            dist/Image.gz
-            dist/vmlinux
-            dist/System.map
-            dist/.config
-            dist/BUILD_INFO.txt
-            dist/SHA256SUMS
-            dist/kazera-m11-kernel-*.tar.gz
-            dist/dtb/samsung/*.dtb
-            dist/dtb/samsung/*.dtbo
-          if-no-files-found: error
-          retention-days: 30
- out/.config)" -eq 1
-          test "$(grep -c '^CONFIG_ARCH_MSM8953=y
-
-      - name: Build kernel and DTBs
-        env:
-          ARCH: arm64
-          SUBARCH: arm64
-          CC: clang
-          CLANG_TRIPLE: aarch64-linux-gnu-
-          CROSS_COMPILE: aarch64-linux-gnu-
-        run: |
-          set -euxo pipefail
-          make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" dtbs -j"$(nproc)"
-          make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" Image.gz vmlinux System.map -j"$(nproc)"
-          test -s out/arch/arm64/boot/Image.gz
-          test -s out/vmlinux
-          test -s out/System.map
-          find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name '*.dtb' -o -name '*.dtbo' \) -type f -print | sort
-
-      - name: Package artifacts
-        shell: bash
-        run: |
-          set -euxo pipefail
-          rm -rf dist
-          mkdir -p dist/dtb/samsung
-          cp out/arch/arm64/boot/Image.gz dist/Image.gz
-          cp out/vmlinux dist/vmlinux
-          cp out/System.map dist/System.map
-          cp out/.config dist/.config
-          find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name '*.dtb' -o -name '*.dtbo' \) -type f -exec cp {} dist/dtb/samsung/ \;
-          {
-            echo "kernel_repo=https://github.com/Kazera62/android_kernel_samsung_sdm450"
-            echo "kernel_branch=\${GITHUB_REF_NAME}"
-            echo "kernel_commit=\${GITHUB_SHA}"
-            echo "base_config=a11q_open_defconfig"
-            echo "target=Samsung SM-M11 / SM-A11 (SDM450)"
-            echo "kernel_release=\$(make -s O=out kernelrelease)"
-          } > dist/BUILD_INFO.txt
-          (cd dist && sha256sum Image.gz vmlinux System.map .config BUILD_INFO.txt dtb/samsung/* 2>/dev/null || true) > dist/SHA256SUMS
-          tar -C dist -czf "kazera-m11-kernel-\${GITHUB_SHA::7}.tar.gz" .
-
-      - name: Upload kernel artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: kazera-m11-kernel
-          path: |
-            dist/Image.gz
-            dist/vmlinux
-            dist/System.map
-            dist/.config
-            dist/BUILD_INFO.txt
-            dist/SHA256SUMS
-            dist/kazera-m11-kernel-*.tar.gz
-            dist/dtb/samsung/*.dtb
-            dist/dtb/samsung/*.dtbo
-          if-no-files-found: error
-          retention-days: 30
- out/.config)" -eq 1
-
-      - name: Build kernel and DTBs
-        env:
-          ARCH: arm64
-          SUBARCH: arm64
-          CC: clang
-          CLANG_TRIPLE: aarch64-linux-gnu-
-          CROSS_COMPILE: aarch64-linux-gnu-
-        run: |
-          set -euxo pipefail
-          make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" dtbs -j"$(nproc)"
-          make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" Image.gz vmlinux System.map -j"$(nproc)"
-          test -s out/arch/arm64/boot/Image.gz
-          test -s out/vmlinux
-          test -s out/System.map
-          find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name '*.dtb' -o -name '*.dtbo' \) -type f -print | sort
-
-      - name: Package artifacts
-        shell: bash
-        run: |
-          set -euxo pipefail
-          rm -rf dist
-          mkdir -p dist/dtb/samsung
-          cp out/arch/arm64/boot/Image.gz dist/Image.gz
-          cp out/vmlinux dist/vmlinux
-          cp out/System.map dist/System.map
-          cp out/.config dist/.config
-          find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name '*.dtb' -o -name '*.dtbo' \) -type f -exec cp {} dist/dtb/samsung/ \;
-          {
-            echo "kernel_repo=https://github.com/Kazera62/android_kernel_samsung_sdm450"
-            echo "kernel_branch=\${GITHUB_REF_NAME}"
-            echo "kernel_commit=\${GITHUB_SHA}"
-            echo "base_config=a11q_open_defconfig"
-            echo "target=Samsung SM-M11 / SM-A11 (SDM450)"
-            echo "kernel_release=\$(make -s O=out kernelrelease)"
-          } > dist/BUILD_INFO.txt
-          (cd dist && sha256sum Image.gz vmlinux System.map .config BUILD_INFO.txt dtb/samsung/* 2>/dev/null || true) > dist/SHA256SUMS
-          tar -C dist -czf "kazera-m11-kernel-\${GITHUB_SHA::7}.tar.gz" .
+          tar -C dist -czf "kazera-m11-kernel-${GITHUB_SHA::7}.tar.gz" .
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
