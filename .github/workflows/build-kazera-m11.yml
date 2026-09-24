@@ -151,7 +151,9 @@ env:
   LD: ld.lld
   CLANG_TRIPLE: aarch64-linux-gnu-
   CROSS_COMPILE: aarch64-linux-gnu-
-  CROSS_COMPILE_ARM32: arm-linux-gnueabi-jobs:
+  CROSS_COMPILE_ARM32: arm-linux-gnueabi-
+
+jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -275,7 +277,7 @@ env:
           set -euxo pipefail
           rm -rf out
 
-          make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" a11q_open_defconfig
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" a11q_open_defconfig
 
           scripts/config --file out/.config --enable ARCH_ZQL1871
           scripts/config --file out/.config --enable ARCH_SDM450
@@ -284,8 +286,40 @@ env:
           case "$ROOT_IMPL" in
             none)
               ;;
-            kernelsu-next|sukisu-ultra)
+            kernelsu-next)
               scripts/config --file out/.config --enable KSU
+              scripts/config --file out/.config --enable KSU_MANUAL_HOOK
+              ;;
+            sukisu-ultra)
+              scripts/config --file out/.config --enable KPROBES
+              scripts/config --file out/.config --enable EXT4_FS
+              scripts/config --file out/.config --enable KSU
+              if [ "$KPM_ENABLE" = "on" ]; then
+                scripts/config --file out/.config --enable KALLSYMS
+                scripts/config --file out/.config --enable KALLSYMS_ALL
+                scripts/config --file out/.config --enable KPM
+              fi
+              ;;
+            resukisu)
+              scripts/config --file out/.config --enable KSU
+              if [ "$SUSFS_ENABLE" = "on" ]; then
+                scripts/config --file out/.config --enable KSU_SUSFS
+                scripts/config --file out/.config --enable KSU_SUSFS_SUS_PATH
+                scripts/config --file out/.config --enable KSU_SUSFS_SUS_MOUNT
+                scripts/config --file out/.config --enable KSU_SUSFS_SUS_KSTAT
+                scripts/config --file out/.config --enable KSU_SUSFS_SPOOF_UNAME
+                scripts/config --file out/.config --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+                scripts/config --file out/.config --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+                scripts/config --file out/.config --enable KSU_SUSFS_OPEN_REDIRECT
+                scripts/config --file out/.config --enable KSU_SUSFS_SUS_MAP
+                if [ "$SUSFS_LOG" = "on" ]; then
+                  scripts/config --file out/.config --enable KSU_SUSFS_ENABLE_LOG
+                else
+                  scripts/config --file out/.config --disable KSU_SUSFS_ENABLE_LOG
+                fi
+              else
+                scripts/config --file out/.config --enable KSU_MANUAL_HOOK
+              fi
               ;;
             *)
               echo "Unsupported root implementation: $ROOT_IMPL" >&2
@@ -294,27 +328,50 @@ env:
           esac
 
           case "$PERF_PROFILE" in
+            stock)
+              ;;
             performance)
               scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
+              scripts/config --file out/.config --enable PREEMPT_NONE
               scripts/config --file out/.config --enable CPU_BOOST
               scripts/config --file out/.config --enable SCHED_AUTOGROUP
               scripts/config --file out/.config --enable SCHED_TUNE
-              scripts/config --file out/.config --disable HZ_250 --disable HZ_300 --disable HZ_1000 --enable HZ_100 --set-val HZ 100
               ;;
             balanced)
               scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
+              scripts/config --file out/.config --enable PREEMPT_VOLUNTARY
               scripts/config --file out/.config --enable CPU_BOOST
+              scripts/config --file out/.config --enable SCHED_AUTOGROUP
               scripts/config --file out/.config --enable SCHED_TUNE
-              scripts/config --file out/.config --disable HZ_250 --disable HZ_300 --disable HZ_1000 --enable HZ_100 --set-val HZ 100
               ;;
             latency)
               scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
+              scripts/config --file out/.config --enable PREEMPT
               scripts/config --file out/.config --enable CPU_BOOST
+              scripts/config --file out/.config --enable SCHED_AUTOGROUP
               scripts/config --file out/.config --enable SCHED_TUNE
-              scripts/config --file out/.config --disable HZ_100 --disable HZ_250 --disable HZ_1000 --enable HZ_300 --set-val HZ 300
               ;;
             *)
               echo "Unsupported performance profile: $PERF_PROFILE" >&2
+              exit 1
+              ;;
+          esac
+
+          case "$HZ_CHOICE" in
+            100)
+              scripts/config --file out/.config --disable HZ_250 --disable HZ_300 --disable HZ_1000 --enable HZ_100
+              ;;
+            250)
+              scripts/config --file out/.config --disable HZ_100 --disable HZ_300 --disable HZ_1000 --enable HZ_250
+              ;;
+            300)
+              scripts/config --file out/.config --disable HZ_100 --disable HZ_250 --disable HZ_1000 --enable HZ_300
+              ;;
+            1000)
+              scripts/config --file out/.config --disable HZ_100 --disable HZ_250 --disable HZ_300 --enable HZ_1000
+              ;;
+            *)
+              echo "Unsupported HZ: $HZ_CHOICE" >&2
               exit 1
               ;;
           esac
@@ -353,26 +410,18 @@ env:
 
           case "$IO_SCHED" in
             cfq)
-              scripts/config --file out/.config --enable IOSCHED_CFQ
-              scripts/config --file out/.config --disable IOSCHED_NOOP --disable IOSCHED_DEADLINE
-              scripts/config --file out/.config --enable DEFAULT_CFQ
-              scripts/config --file out/.config --disable DEFAULT_NOOP --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --enable IOSCHED_CFQ --disable IOSCHED_NOOP --disable IOSCHED_DEADLINE
+              scripts/config --file out/.config --enable DEFAULT_CFQ --disable DEFAULT_NOOP --disable DEFAULT_DEADLINE
               scripts/config --file out/.config --set-str DEFAULT_IOSCHED cfq
               ;;
             noop)
-              scripts/config --file out/.config --enable IOSCHED_NOOP
-              scripts/config --file out/.config --disable IOSCHED_CFQ --disable IOSCHED_DEADLINE
-              scripts/config --file out/.config --disable DEFAULT_CFQ
-              scripts/config --file out/.config --enable DEFAULT_NOOP
-              scripts/config --file out/.config --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --enable IOSCHED_NOOP --disable IOSCHED_CFQ --disable IOSCHED_DEADLINE
+              scripts/config --file out/.config --disable DEFAULT_CFQ --enable DEFAULT_NOOP --disable DEFAULT_DEADLINE
               scripts/config --file out/.config --set-str DEFAULT_IOSCHED noop
               ;;
             deadline)
-              scripts/config --file out/.config --enable IOSCHED_DEADLINE
-              scripts/config --file out/.config --disable IOSCHED_CFQ --disable IOSCHED_NOOP
-              scripts/config --file out/.config --disable DEFAULT_CFQ
-              scripts/config --file out/.config --disable DEFAULT_NOOP
-              scripts/config --file out/.config --enable DEFAULT_DEADLINE
+              scripts/config --file out/.config --enable IOSCHED_DEADLINE --disable IOSCHED_CFQ --disable IOSCHED_NOOP
+              scripts/config --file out/.config --disable DEFAULT_CFQ --disable DEFAULT_NOOP --enable DEFAULT_DEADLINE
               scripts/config --file out/.config --set-str DEFAULT_IOSCHED deadline
               ;;
             stock)
@@ -385,70 +434,86 @@ env:
 
           case "$TCP_CONG" in
             bbr)
-              scripts/config --file out/.config --enable TCP_CONG_ADVANCED
-              scripts/config --file out/.config --enable TCP_CONG_BBR
-              scripts/config --file out/.config --enable NET_SCH_FQ
-              scripts/config --file out/.config --enable DEFAULT_BBR
-              scripts/config --file out/.config --disable DEFAULT_CUBIC
-              scripts/config --file out/.config --set-str DEFAULT_TCP_CONG bbr
+              scripts/config --file out/.config --enable TCP_CONG_ADVANCED --enable TCP_CONG_BBR --enable NET_SCH_FQ --enable DEFAULT_BBR --disable DEFAULT_CUBIC --set-str DEFAULT_TCP_CONG bbr
               ;;
             cubic)
-              scripts/config --file out/.config --enable TCP_CONG_ADVANCED
-              scripts/config --file out/.config --enable TCP_CONG_CUBIC
-              scripts/config --file out/.config --disable TCP_CONG_BBR
-              scripts/config --file out/.config --disable DEFAULT_BBR
-              scripts/config --file out/.config --enable DEFAULT_CUBIC
-              scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic
+              scripts/config --file out/.config --enable TCP_CONG_ADVANCED --enable TCP_CONG_CUBIC --disable TCP_CONG_BBR --disable DEFAULT_BBR --enable DEFAULT_CUBIC --set-str DEFAULT_TCP_CONG cubic
               ;;
             stock)
               ;;
             *)
-              echo "Unsupported TCP congestion selection: $TCP_CONG" >&2
+              echo "Unsupported TCP congestion: $TCP_CONG" >&2
               exit 1
               ;;
           esac
+
+          scripts/config --file out/.config --enable ZRAM
+          if [ "$ZRAM_WB" = "on" ]; then
+            scripts/config --file out/.config --enable ZRAM_WRITEBACK --enable ZRAM_LRU_WRITEBACK
+          else
+            scripts/config --file out/.config --disable ZRAM_WRITEBACK --disable ZRAM_LRU_WRITEBACK
+          fi
+
+          if [ "$PSI_ENABLE" = "on" ]; then
+            scripts/config --file out/.config --enable PSI
+          else
+            scripts/config --file out/.config --disable PSI
+          fi
 
           if [ "$CORTEX_TUNE" = "on" ]; then
             KCFLAGS="-mcpu=cortex-a53"
           else
             KCFLAGS=""
           fi
+          printf "%s\n" "KCFLAGS=$KCFLAGS" > out/kazera-build-env.txt
 
-          printf '%s\n' "KCFLAGS=$KCFLAGS" > out/kazera-build-env.txt
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" olddefconfig
 
-          make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" olddefconfig
+          grep -E "^(CONFIG_KSU=|CONFIG_KSU_MANUAL_HOOK=|CONFIG_KSU_SUSFS=|CONFIG_KPM=|CONFIG_KPROBES=|CONFIG_KALLSYMS_ALL=|CONFIG_HZ=|CONFIG_HZ_|CONFIG_CPU_FREQ_DEFAULT_GOV=|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_IOSCHED=|CONFIG_ZRAM_WRITEBACK=|CONFIG_PREEMPT|CONFIG_PSI=|CONFIG_LOCALVERSION=)" out/.config || true
+          test "$(grep -c "^CONFIG_ARCH_ZQL1871=y$" out/.config)" -eq 1
+          test "$(grep -c "^CONFIG_ARCH_SDM450=y$" out/.config)" -eq 1
+          test "$(grep -c "^CONFIG_ARCH_MSM8953=y$" out/.config)" -eq 1
 
-          grep -E '^(CONFIG_KSU=|CONFIG_ARCH_ZQL1871=|CONFIG_ARCH_SDM450=|CONFIG_ARCH_MSM8953=|CONFIG_HZ=|CONFIG_CPU_FREQ_DEFAULT_GOV=|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_IOSCHED=|CONFIG_LOCALVERSION=)' out/.config || true
-
-          test "$(grep -c '^CONFIG_ARCH_ZQL1871=y$' out/.config)" -eq 1
-          test "$(grep -c '^CONFIG_ARCH_SDM450=y$' out/.config)" -eq 1
-          test "$(grep -c '^CONFIG_ARCH_MSM8953=y$' out/.config)" -eq 1
-
-          if [ "$ROOT_IMPL" != "none" ]; then
-            test "$(grep -c '^CONFIG_KSU=y$' out/.config)" -eq 1
-          fi
-
+          case "$ROOT_IMPL:$KPM_ENABLE:$SUSFS_ENABLE" in
+            sukisu-ultra:on:off)
+              test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KPM=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KALLSYMS_ALL=y$" out/.config)" -eq 1
+              ;;
+            resukisu:off:on)
+              test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KSU_SUSFS=y$" out/.config)" -eq 1
+              test -s fs/susfs.c
+              test -s include/linux/susfs.h
+              test -s include/linux/susfs_def.h
+              ;;
+            kernelsu-next:off:off)
+              test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KSU_MANUAL_HOOK=y$" out/.config)" -eq 1
+              ;;
+            none:off:off)
+              ;;
+            *)
+              echo "Unexpected feature combination after configuration." >&2
+              exit 1
+              ;;
+          esac
       - name: Build kernel and DTBs
         shell: bash
         run: |
           set -euxo pipefail
 
-          if [ "$CORTEX_TUNE" = "on" ]; then
-            KCFLAGS="-mcpu=cortex-a53"
-          else
-            KCFLAGS=""
-          fi
+          if [ "$CORTEX_TUNE" = "on" ]; then KCFLAGS="-mcpu=cortex-a53"; else KCFLAGS=""; fi
 
-          make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" KCFLAGS="$KCFLAGS" dtbs -j"$(nproc)"
-          make O=out ARCH="$ARCH" CC="$CC" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" KCFLAGS="$KCFLAGS" Image.gz vmlinux System.map -j"$(nproc)"
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" KCFLAGS="$KCFLAGS" dtbs -j"$(nproc)"
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" KCFLAGS="$KCFLAGS" Image.gz vmlinux System.map -j"$(nproc)"
 
           test -s out/arch/arm64/boot/Image.gz
           test -s out/vmlinux
           test -s out/System.map
           test -d out/arch/arm64/boot/dts/samsung
-
+          test -n "$(find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print -quit)"
           find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print | sort
-
       - name: Package artifacts
         shell: bash
         run: |
@@ -469,13 +534,17 @@ env:
             echo "kernel_branch=$GITHUB_REF_NAME"
             echo "kernel_commit=$GITHUB_SHA"
             echo "root_impl=$ROOT_IMPL"
-            echo "kernelsu_next_ref=$KSUN_REF"
-            echo "sukisu_ultra_ref=$SUKISU_REF"
+            echo "kpm=$KPM_ENABLE"
+            echo "susfs=$SUSFS_ENABLE"
+            echo "susfs_log=$SUSFS_LOG"
             echo "clang=$CLANG_VERSION"
             echo "performance_profile=$PERF_PROFILE"
+            echo "hz=$HZ_CHOICE"
             echo "cpu_governor=$CPU_GOV"
             echo "io_scheduler=$IO_SCHED"
             echo "tcp_congestion=$TCP_CONG"
+            echo "zram_writeback=$ZRAM_WB"
+            echo "psi=$PSI_ENABLE"
             echo "cortex_a53_tune=$CORTEX_TUNE"
             echo "base_config=a11q_open_defconfig"
             echo "target=Samsung SM-M11 / SM-A11 (SDM450)"
