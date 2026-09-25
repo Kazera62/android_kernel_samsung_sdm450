@@ -88,23 +88,28 @@ print(f"[sukisu] Rewrote untagged_addr() for Linux 4.9 in {untagged_rewrites} Su
 
 # Linux 4.9 arm64 exposes current_stack_pointer from asm/stack_pointer.h,
 # while newer SukiSU uses current_user_stack_pointer() from task_stack.h.
-for path in kernel_dir.rglob("*"):
-    if path.suffix not in {".c", ".h"} or not path.is_file():
-        continue
-    text = path.read_text()
-    if "current_user_stack_pointer()" not in text or "current_user_stack_pointer" in text and "linux/sched/task_stack.h" in text:
-        continue
-    if "arch/arm64" not in str(path) and path.name != "sucompat.c":
-        continue
-    if "current_user_stack_pointer()" not in text:
-        continue
-    if "#include \"<asm/stack_pointer.h>\"" not in text:
-        text = '#include <asm/stack_pointer.h>\\n' + text
-    compat = '''\\n#ifndef current_user_stack_pointer\\nstatic inline unsigned long current_user_stack_pointer(void)\\n{\\n    return current_stack_pointer;\\n}\\n#endif\\n\\n'''
-    if compat.strip() not in text:
-        text = text.replace('\\n', compat, 1)
-        path.write_text(text)
-        print(f"[sukisu] Added Linux 4.9 current_user_stack_pointer shim: {path}")
+sucompat = kernel_dir / "feature" / "sucompat.c"
+if sucompat.is_file():
+    text = sucompat.read_text()
+    if "current_user_stack_pointer()" in text:
+        if '#include <asm/stack_pointer.h>' not in text:
+            text = '#include <asm/stack_pointer.h>\n' + text
+        compat = '''
+#ifndef current_user_stack_pointer
+static inline unsigned long current_user_stack_pointer(void)
+{
+    return current_stack_pointer;
+}
+#endif
+
+'''
+        if compat.strip() not in text:
+            insert_at = text.find('#include "arch.h"')
+            if insert_at < 0:
+                raise SystemExit("SukiSU sucompat.c include marker not found")
+            text = text[:insert_at] + compat + text[insert_at:]
+            sucompat.write_text(text)
+            print(f"[sukisu] Added Linux 4.9 current_user_stack_pointer shim: {sucompat}")
 
 
 # SukiSU v4.2.0 uses syscall_fn_t on ARM64, but the 4.9 arm64 headers expose
