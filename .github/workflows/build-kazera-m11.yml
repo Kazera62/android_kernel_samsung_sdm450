@@ -672,7 +672,7 @@ jobs:
 
     steps:
       - name: Download kernel artifact
-        uses: actions/download-artifact@v7.0.1
+        uses: actions/download-artifact@v8
         with:
           name: kazera-m11-build-${{ github.run_number }}
           path: build-artifact
@@ -783,7 +783,7 @@ jobs:
 
     steps:
       - name: Download AnyKernel3 artifact
-        uses: actions/download-artifact@v7.0.1
+        uses: actions/download-artifact@v8
         with:
           name: kazera-m11-anykernel3-${{ github.run_number }}
           path: dist
