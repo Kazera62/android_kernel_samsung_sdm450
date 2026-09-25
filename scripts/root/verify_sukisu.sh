@@ -27,9 +27,20 @@ grep -Fq 'typedef void (*syscall_fn_t)(void);' "$KSU_DIR/hook/syscall_hook.h" ||
 grep -Fq 'ksu_call_original_syscall' "$KSU_DIR/hook/syscall_hook.h" || die "Linux 4.9 syscall ABI shim missing"
 grep -Fq 'ksu_strncpy_from_user_nofault' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 strncpy compatibility shim missing"
 grep -Fq '#define ksu_close_fd sys_close' "$KSU_DIR/include/util.h" || die "Linux 4.9 sys_close compatibility shim missing"
-if grep -RqsF 'strncpy_from_user_nofault' "$KSU_DIR"; then
-  die "SukiSU still references raw strncpy_from_user_nofault"
-fi
+python3 - "$KSU_DIR" <<'PY'
+from pathlib import Path
+import re
+import sys
+root = Path(sys.argv[1])
+raw = []
+for path in root.rglob("*"):
+    if path.suffix not in {".c", ".h"} or not path.is_file():
+        continue
+    if re.search(r"(?<!ksu_)strncpy_from_user_nofault", path.read_text()):
+        raw.append(str(path))
+if raw:
+    raise SystemExit("raw strncpy_from_user_nofault remains: " + ", ".join(raw))
+PY
 grep -Fq '#ifdef MODULE_IMPORT_NS' "$KSU_DIR/core/init.c" || die "MODULE_IMPORT_NS 4.9 compatibility guard missing"
 if grep -RqsF '#include <linux/pgtable.h>' "$KSU_DIR"; then
   die "SukiSU still references linux/pgtable.h after Linux 4.9 compatibility pass"
