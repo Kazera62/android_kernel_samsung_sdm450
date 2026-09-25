@@ -585,7 +585,7 @@ jobs:
 
           tar -C dist -czf "kazera-m11-kernel-$(git rev-parse --short=7 HEAD)-$ROOT_IMPL-$CLANG_VERSION.tar.gz" .
 
-          AK3_COMMIT="fdf4603a407048740191a478229b294a714949f8"
+          AK3_COMMIT="6f88dff82b786e879b255a8e1523547c4f62d031"
           rm -rf .anykernel3
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git .anykernel3
           git -C .anykernel3 fetch --depth=1 origin "$AK3_COMMIT"
