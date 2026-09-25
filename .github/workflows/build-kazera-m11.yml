@@ -283,8 +283,11 @@ jobs:
         run: |
           set -euxo pipefail
           rm -rf .kernel-fixes
-
-          git clone --depth=1 --branch main "$KERNEL_FIXES_REPO" .kernel-fixes
+          mkdir -p .kernel-fixes
+          git -C .kernel-fixes init
+          git -C .kernel-fixes remote add origin "$KERNEL_FIXES_REPO"
+          git -C .kernel-fixes fetch --depth=1 origin "$KERNEL_FIXES_REF"
+          git -C .kernel-fixes checkout --detach FETCH_HEAD
           test "$(git -C .kernel-fixes rev-parse HEAD)" = "$KERNEL_FIXES_REF"
 
           bash .kernel-fixes/scripts/apply-fixes.sh \
