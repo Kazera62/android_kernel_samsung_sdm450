@@ -87,7 +87,7 @@ on:
           - performance
           - schedutil
           - interactive
-          - "on"demand
+          - ondemand
           - stock
       io_scheduler:
         description: "Pilih block I/O scheduler default."
