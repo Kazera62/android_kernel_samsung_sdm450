@@ -53,7 +53,7 @@ init = Path(sys.argv[3])
 
 # Linux 4.9 has linux/compiler.h but not linux/compiler_types.h.
 text = sulog.read_text()
-text = text.replace("#include <linux/compiler_types.h>\\n", "", 1)
+text = text.replace("#include <linux/compiler_types.h>\n", "", 1)
 sulog.write_text(text)
 
 # SukiSU v4.2.0 uses syscall_fn_t on ARM64, but the 4.9 arm64 headers expose
