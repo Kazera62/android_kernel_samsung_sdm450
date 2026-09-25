@@ -21,10 +21,11 @@ test -f "$DRIVER_KCONFIG" || die "drivers/Kconfig not found"
 test -n "$SUKISU_REF" || die "SukiSU ref is empty"
 
 rm -rf "$KSU_DIR"
-log "Cloning SukiSU-Ultra repository"
-git clone --no-tags --filter=blob:none --no-checkout "$SUKISU_REPO" "$KSU_DIR"
 
-log "Fetching exact SukiSU commit: $SUKISU_REF"
+log "Cloning SukiSU-Ultra release: $SUKISU_VERSION"
+git clone --depth=1 --single-branch --branch "$SUKISU_VERSION" "$SUKISU_REPO" "$KSU_DIR"
+
+log "Verifying exact SukiSU commit"
 git -C "$KSU_DIR" fetch --depth=1 origin "$SUKISU_REF"
 git -C "$KSU_DIR" checkout --detach "$SUKISU_REF"
 
