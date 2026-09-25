@@ -86,6 +86,124 @@ print(f"[sukisu] Removed linux/pgtable.h from {removed_pgtable} SukiSU source fi
 print(f"[sukisu] Removed linux/sched/task_stack.h from {removed_task_stack} SukiSU source files")
 print(f"[sukisu] Rewrote untagged_addr() for Linux 4.9 in {untagged_rewrites} SukiSU source files")
 
+# Linux 4.9 lacks the newer nofault string-copy helper. Keep the
+# SukiSU source calling a local compatibility shim.
+compat_header = kernel_dir / "kernel_compat.h"
+if compat_header.is_file():
+    text = compat_header.read_text()
+    helper = '''
+#ifndef ksu_strncpy_from_user_nofault
+static inline long ksu_strncpy_from_user_nofault(char *dst,
+                                                 const char __user *src,
+                                                 long count)
+{
+    return strncpy_from_user(dst, src, count);
+}
+#endif
+
+'''
+    if "ksu_strncpy_from_user_nofault" not in text:
+        if "#include <linux/uaccess.h>" not in text:
+            text = text.replace("#include <linux/fs.h>\n", "#include <linux/fs.h>\n#include <linux/uaccess.h>\n", 1)
+        marker = "#include <linux/version.h>\n"
+        if marker not in text:
+            raise SystemExit("SukiSU kernel_compat.h include marker not found")
+        text = text.replace(marker, marker + helper, 1)
+        compat_header.write_text(text)
+        print("[sukisu] Added Linux 4.9 strncpy_from_user compatibility shim")
+
+    replaced = 0
+    for path in kernel_dir.rglob("*"):
+        if path.suffix not in {".c", ".h"} or not path.is_file():
+            continue
+        source = path.read_text()
+        if "strncpy_from_user_nofault" in source and "ksu_strncpy_from_user_nofault" not in source:
+            updated = source.replace("strncpy_from_user_nofault", "ksu_strncpy_from_user_nofault")
+            if updated != source:
+                path.write_text(updated)
+                replaced += 1
+    print(f"[sukisu] Replaced strncpy_from_user_nofault with 4.9 shim in {replaced} SukiSU source files")
+
+# Linux 4.9 does not have ksys_close(); it still exposes sys_close().
+util_header = kernel_dir / "include" / "util.h"
+if util_header.is_file():
+    text = util_header.read_text()
+    old = "#define ksu_close_fd ksys_close"
+    new = '''#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
+#define ksu_close_fd sys_close
+#else
+#define ksu_close_fd ksys_close
+#endif'''
+    if old in text and new not in text:
+        text = text.replace(old, new, 1)
+        util_header.write_text(text)
+        print("[sukisu] Added Linux 4.9 sys_close compatibility shim")
+
+# Linux 4.9 ARM64 syscall-table entries are direct C syscall functions, not
+# pt_regs-based wrappers. SukiSU v4.2.0 calls them through the newer ABI.
+syscall_hook_header = kernel_dir / "hook" / "syscall_hook.h"
+if syscall_hook_header.is_file():
+    text = syscall_hook_header.read_text()
+    helper = '''
+#if defined(__aarch64__) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
+typedef asmlinkage long (*ksu_legacy_raw_syscall_t)(unsigned long, unsigned long,
+                                                    unsigned long, unsigned long,
+                                                    unsigned long, unsigned long);
+
+static inline long ksu_call_original_syscall(int nr, struct pt_regs *regs)
+{
+    unsigned long args[6] = { 0 };
+    ksu_legacy_raw_syscall_t fn;
+
+    syscall_get_arguments(current, regs, 0, ARRAY_SIZE(args), args);
+    fn = (ksu_legacy_raw_syscall_t)ksu_syscall_table[nr];
+
+    return fn(args[0], args[1], args[2], args[3], args[4], args[5]);
+}
+#else
+static inline long ksu_call_original_syscall(int nr, struct pt_regs *regs)
+{
+    return ((long (*)(const struct pt_regs *))ksu_syscall_table[nr])(regs);
+}
+#endif
+
+'''
+    if "ksu_call_original_syscall" not in text:
+        marker = "extern syscall_fn_t *ksu_syscall_table;\n"
+        if marker not in text:
+            raise SystemExit("SukiSU syscall_hook.h table declaration marker not found")
+        text = text.replace(marker, marker + helper, 1)
+        syscall_hook_header.write_text(text)
+        print("[sukisu] Added Linux 4.9 ARM64 original-syscall ABI shim")
+
+# Replace all v4.2.0 direct calls with the compatibility helper.
+replaced_calls = 0
+for rel in ("feature/sucompat.c", "hook/syscall_event_bridge.c"):
+    path = kernel_dir / rel
+    if not path.is_file():
+        continue
+    source = path.read_text()
+    updated = source.replace("ksu_syscall_table[orig_nr](regs)", "ksu_call_original_syscall(orig_nr, regs)")
+    updated = updated.replace("ksu_syscall_table[__NR_execveat](regs)", "ksu_call_original_syscall(__NR_execveat, regs)")
+    if updated != source:
+        path.write_text(updated)
+        replaced_calls += 1
+print(f"[sukisu] Rewired legacy ARM64 syscall-table calls in {replaced_calls} SukiSU source files")
+
+# Linux 4.9 compatibility checks for the transformed tree.
+for needle in ("strncpy_from_user_nofault", "ksys_close"):
+    stale = []
+    for path in kernel_dir.rglob("*"):
+        if path.suffix not in {".c", ".h"} or not path.is_file():
+            continue
+        if needle in path.read_text():
+            stale.append(str(path))
+    if stale:
+        raise SystemExit(f"SukiSU compatibility transform left unsupported symbol {needle}: {stale}")
+
+if "ksu_call_original_syscall" not in syscall_hook_header.read_text():
+    raise SystemExit("SukiSU ARM64 syscall compatibility helper was not installed")
+
 # Linux 4.9 arm64 exposes current_stack_pointer from asm/stack_pointer.h,
 # while newer SukiSU uses current_user_stack_pointer() from task_stack.h.
 sucompat = kernel_dir / "feature" / "sucompat.c"
