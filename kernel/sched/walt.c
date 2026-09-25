@@ -159,13 +159,25 @@ __read_mostly unsigned int sysctl_sched_ravg_hist_size = 5;
 
 static __read_mostly unsigned int sched_io_is_busy = 1;
 
-__read_mostly unsigned int sched_window_stats_policy =
-	WINDOW_STATS_MAX_RECENT_AVG;
-__read_mostly unsigned int sysctl_sched_window_stats_policy =
-	WINDOW_STATS_MAX_RECENT_AVG;
+#if defined(CONFIG_KAZERA_SCHED_PROFILE_PERFORMANCE)
+__read_mostly unsigned int sched_window_stats_policy = WINDOW_STATS_AVG;
+__read_mostly unsigned int sysctl_sched_window_stats_policy = WINDOW_STATS_AVG;
+#elif defined(CONFIG_KAZERA_SCHED_PROFILE_LATENCY)
+__read_mostly unsigned int sched_window_stats_policy = WINDOW_STATS_RECENT;
+__read_mostly unsigned int sysctl_sched_window_stats_policy = WINDOW_STATS_RECENT;
+#else
+__read_mostly unsigned int sched_window_stats_policy = WINDOW_STATS_MAX_RECENT_AVG;
+__read_mostly unsigned int sysctl_sched_window_stats_policy = WINDOW_STATS_MAX_RECENT_AVG;
+#endif
 
 /* Window size (in ns) */
+#if defined(CONFIG_KAZERA_SCHED_PROFILE_PERFORMANCE)
+__read_mostly unsigned int sched_ravg_window = 40000000;
+#elif defined(CONFIG_KAZERA_SCHED_PROFILE_LATENCY)
+__read_mostly unsigned int sched_ravg_window = 20000000;
+#else
 __read_mostly unsigned int sched_ravg_window = MIN_SCHED_RAVG_WINDOW;
+#endif
 
 /*
  * A after-boot constant divisor for cpu_util_freq_walt() to apply the load
