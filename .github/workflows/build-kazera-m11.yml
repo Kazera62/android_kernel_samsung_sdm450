@@ -10,12 +10,12 @@ on:
   workflow_dispatch:
     inputs:
       kernel_name:
-        description: "Nama kernel pada sistem dan file ZIP."
+        description: "Nama kernel pada perangkat dan file ZIP."
         type: string
         required: true
         default: "Kazera M11/A11"
       telegram:
-        description: "Kirim hasil build AnyKernel3 ke Telegram."
+        description: "Kirim ZIP AnyKernel3 hasil build ke Telegram."
         type: choice
         required: true
         default: off
@@ -48,16 +48,8 @@ on:
         options:
           - off
           - on
-      susfs_log:
-        description: "Aktifkan logging SUSFS untuk debugging."
-        type: choice
-        required: true
-        default: off
-        options:
-          - off
-          - on
       clang:
-        description: "Pilih versi Android Clang untuk kompilasi."
+        description: "Pilih Android Clang toolchain untuk kompilasi kernel."
         type: choice
         required: true
         default: r383902b
@@ -67,7 +59,7 @@ on:
           - r370808
           - r365631c
       performance_profile:
-        description: "Pilih preset scheduler dan preemption kernel."
+        description: "Pilih preset performa dan preemption kernel."
         type: choice
         required: true
         default: performance
@@ -87,7 +79,7 @@ on:
           - 300
           - 1000
       cpu_governor:
-        description: "Pilih governor CPU default."
+        description: "Pilih CPU frequency governor default."
         type: choice
         required: true
         default: performance
@@ -98,7 +90,7 @@ on:
           - ondemand
           - stock
       io_scheduler:
-        description: "Pilih scheduler I/O storage default."
+        description: "Pilih block I/O scheduler default."
         type: choice
         required: true
         default: cfq
@@ -108,7 +100,7 @@ on:
           - deadline
           - stock
       tcp_congestion:
-        description: "Pilih congestion control TCP default."
+        description: "Pilih TCP congestion control default."
         type: choice
         required: true
         default: bbr
@@ -124,16 +116,8 @@ on:
         options:
           - on
           - off
-      psi:
-        description: "Aktifkan Pressure Stall Information."
-        type: choice
-        required: true
-        default: off
-        options:
-          - on
-          - off
       cortex_a53_tune:
-        description: "Aktifkan optimasi compiler untuk Cortex-A53."
+        description: "Aktifkan compiler tuning untuk Cortex-A53."
         type: choice
         required: true
         default: on
@@ -154,7 +138,6 @@ env:
   ROOT_IMPL: ${{ inputs.root_impl || 'none' }}
   KPM_ENABLE: ${{ inputs.kpm || 'off' }}
   SUSFS_ENABLE: ${{ inputs.susfs || 'off' }}
-  SUSFS_LOG: ${{ inputs.susfs_log || 'off' }}
   CLANG_VERSION: ${{ inputs.clang || 'r383902b' }}
   PERF_PROFILE: ${{ inputs.performance_profile || 'performance' }}
   HZ_CHOICE: ${{ inputs.hz || '1000' }}
@@ -162,7 +145,6 @@ env:
   IO_SCHED: ${{ inputs.io_scheduler || 'cfq' }}
   TCP_CONG: ${{ inputs.tcp_congestion || 'bbr' }}
   ZRAM_WB: ${{ inputs.zram_writeback || 'on' }}
-  PSI_ENABLE: ${{ inputs.psi || 'off' }}
   CORTEX_TUNE: ${{ inputs.cortex_a53_tune || 'on' }}
   ANYKERNEL3_REPO: https://github.com/Kazera62/AnyKernel3.git
   ANYKERNEL3_REF: 0ab72a279369da34644860a256eba3f2e8142dad
@@ -344,11 +326,7 @@ jobs:
                 scripts/config --file out/.config --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
                 scripts/config --file out/.config --enable KSU_SUSFS_OPEN_REDIRECT
                 scripts/config --file out/.config --enable KSU_SUSFS_SUS_MAP
-                if [ "$SUSFS_LOG" = "on" ]; then
-                  scripts/config --file out/.config --enable KSU_SUSFS_ENABLE_LOG
-                else
-                  scripts/config --file out/.config --disable KSU_SUSFS_ENABLE_LOG
-                fi
+                scripts/config --file out/.config --disable KSU_SUSFS_ENABLE_LOG
               else
                 scripts/config --file out/.config --enable KSU_MANUAL_HOOK
               fi
@@ -486,11 +464,7 @@ jobs:
             scripts/config --file out/.config --disable ZRAM_WRITEBACK --disable ZRAM_LRU_WRITEBACK
           fi
 
-          if [ "$PSI_ENABLE" = "on" ]; then
-            scripts/config --file out/.config --enable PSI
-          else
-            scripts/config --file out/.config --disable PSI
-          fi
+          scripts/config --file out/.config --disable PSI
 
           if [ "$CORTEX_TUNE" = "on" ]; then
             KCFLAGS="-mcpu=cortex-a53+crypto"
@@ -602,7 +576,6 @@ jobs:
             echo "root_impl=$ROOT_IMPL"
             echo "kpm=$KPM_ENABLE"
             echo "susfs=$SUSFS_ENABLE"
-            echo "susfs_log=$SUSFS_LOG"
             echo "clang=$CLANG_VERSION"
             echo "performance_profile=$PERF_PROFILE"
             echo "hz=$HZ_CHOICE"
@@ -610,7 +583,6 @@ jobs:
             echo "io_scheduler=$IO_SCHED"
             echo "tcp_congestion=$TCP_CONG"
             echo "zram_writeback=$ZRAM_WB"
-            echo "psi=$PSI_ENABLE"
             echo "cortex_a53_tune=$CORTEX_TUNE"
             echo "base_config=a11q_open_defconfig"
             echo "target=Samsung Galaxy M11 / A11 (SDM450)"
