@@ -562,7 +562,7 @@ jobs:
           tar -C dist -czf "kazera-m11-kernel-$(git rev-parse --short=7 HEAD)-$ROOT_IMPL-$CLANG_VERSION.tar.gz" .
 
       - name: Upload kernel artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: kazera-m11-kernel-${{ github.run_number }}
           path: |
