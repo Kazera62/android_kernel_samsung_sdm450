@@ -39,10 +39,26 @@ test -f "$KSU_DIR/kernel/Makefile" || die "SukiSU kernel/Makefile missing"
 test -f "$KSU_DIR/kernel/core/init.c" || die "SukiSU kernel/core/init.c missing"
 test -f "$KSU_DIR/kernel/Kbuild" || die "SukiSU kernel/Kbuild missing"
 
+# SukiSU v4.2.0 includes several headers introduced after Linux 4.9.
+# Keep the upstream source pinned, but apply only mechanical 4.9 compatibility
+# transforms in this integration layer.
+
+python3 - "$KSU_DIR/kernel/feature/sulog.c" "$KSU_DIR/kernel/hook/syscall_hook.h" "$KSU_DIR/kernel/core/init.c" <<'PY'
+from pathlib import Path
+import sys
+
+sulog = Path(sys.argv[1])
+hook = Path(sys.argv[2])
+init = Path(sys.argv[3])
+
+# Linux 4.9 has linux/compiler.h but not linux/compiler_types.h.
+text = sulog.read_text()
+text = text.replace("#include <linux/compiler_types.h>\\n", "", 1)
+sulog.write_text(text)
+
 # SukiSU v4.2.0 uses syscall_fn_t on ARM64, but the 4.9 arm64 headers expose
 # sys_call_table as void * and do not provide the newer sys_call_ptr_t alias.
 # Use a same-size generic function-pointer type for the table patcher.
-python3 - "$KSU_DIR/kernel/hook/syscall_hook.h" "$KSU_DIR/kernel/core/init.c" <<'PY'
 from pathlib import Path
 import sys
 
