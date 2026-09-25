@@ -328,6 +328,9 @@ jobs:
           grep -Fq 'config ZRAM_LRU_WRITEBACK' drivers/block/zram/Kconfig
           grep -Fq 'config SCHED_AUTOGROUP' init/Kconfig
           grep -Fq 'config SCHED_TUNE' init/Kconfig
+          grep -Fq 'config KAZERA_SCHED_PROFILE_PERFORMANCE' init/Kconfig
+          grep -Fq 'config KAZERA_SCHED_PROFILE_BALANCED' init/Kconfig
+          grep -Fq 'config KAZERA_SCHED_PROFILE_LATENCY' init/Kconfig
           grep -Fq 'config CC_OPTIMIZE_FOR_PERFORMANCE' init/Kconfig
           test -s arch/arm64/configs/a11q_open_defconfig
           test -s arch/arm64/Makefile
@@ -391,6 +394,10 @@ jobs:
               ;;
           esac
 
+          for profile in PERFORMANCE BALANCED LATENCY; do
+            scripts/config --file out/.config --disable "KAZERA_SCHED_PROFILE_$profile" || true
+          done
+
           case "$PERF_PROFILE" in
             stock)
               ;;
@@ -401,6 +408,7 @@ jobs:
               scripts/config --file out/.config --enable SCHED_WALT
               scripts/config --file out/.config --enable SCHED_TUNE
               scripts/config --file out/.config --disable SCHED_AUTOGROUP
+              scripts/config --file out/.config --enable KAZERA_SCHED_PROFILE_PERFORMANCE
               ;;
             balanced)
               scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
@@ -409,14 +417,16 @@ jobs:
               scripts/config --file out/.config --enable SCHED_WALT
               scripts/config --file out/.config --enable SCHED_TUNE
               scripts/config --file out/.config --disable SCHED_AUTOGROUP
+              scripts/config --file out/.config --enable KAZERA_SCHED_PROFILE_BALANCED
               ;;
             latency)
               scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
               scripts/config --file out/.config --enable PREEMPT
               scripts/config --file out/.config --enable CPU_BOOST
               scripts/config --file out/.config --enable SCHED_WALT
-              scripts/config --file out/.config --enable SCHED_TUNE
               scripts/config --file out/.config --disable SCHED_AUTOGROUP
+              scripts/config --file out/.config --enable SCHED_TUNE
+              scripts/config --file out/.config --enable KAZERA_SCHED_PROFILE_LATENCY
               ;;
             *)
               echo "Unsupported performance profile: $PERF_PROFILE" >&2
