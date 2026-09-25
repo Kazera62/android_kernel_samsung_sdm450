@@ -124,6 +124,18 @@ static inline long ksu_strncpy_from_user_nofault(char *dst,
             replaced += 1
     print(f"[sukisu] Replaced raw strncpy_from_user_nofault with 4.9 shim in {replaced} SukiSU source files")
 
+    # The compatibility helper is defined in kernel_compat.h; make sure every
+    # C translation unit that uses it actually includes that header.
+    include_added = 0
+    for path in kernel_dir.rglob("*.c"):
+        if not path.is_file():
+            continue
+        source = path.read_text()
+        if "ksu_strncpy_from_user_nofault(" in source and '#include "kernel_compat.h"' not in source:
+            path.write_text('#include "kernel_compat.h"\n' + source)
+            include_added += 1
+    print(f"[sukisu] Added kernel_compat.h include to {include_added} SukiSU C sources")
+
 # Linux 4.9 does not have ksys_close(); it still exposes sys_close().
 util_header = kernel_dir / "include" / "util.h"
 if util_header.is_file():
