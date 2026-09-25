@@ -10,12 +10,12 @@ on:
   workflow_dispatch:
     inputs:
       kernel_name:
-        description: "Nama kernel pada sistem dan file ZIP."
+        description: "Nama yang ditampilkan kernel dan digunakan pada nama ZIP."
         type: string
         required: true
         default: "Kazera M11/A11"
       telegram:
-        description: "Kirim hasil build AnyKernel3 ke Telegram."
+        description: "Mengirim ZIP flashable ke Telegram; tidak memengaruhi kernel."
         type: choice
         required: true
         default: off
@@ -23,7 +23,7 @@ on:
           - off
           - on
       root_impl:
-        description: "Pilih implementasi root kernel."
+        description: "Menentukan integrasi root; none menghasilkan kernel tanpa root tambahan."
         type: choice
         required: true
         default: none
@@ -33,7 +33,7 @@ on:
           - sukisu-ultra
           - resukisu
       kpm:
-        description: "Aktifkan KPM untuk SukiSU-Ultra pada kernel 4.9."
+        description: "Mengaktifkan Kernel Patch Module; menambah fitur KPM dan kebutuhan patch terkait."
         type: choice
         required: true
         default: off
@@ -41,7 +41,7 @@ on:
           - off
           - on
       susfs:
-        description: "Aktifkan SUSFS untuk ReSukiSU pada kernel 4.9."
+        description: "Mengaktifkan SUSFS; menambah komponen kernel dan fitur terkait ReSukiSU."
         type: choice
         required: true
         default: off
@@ -49,7 +49,7 @@ on:
           - off
           - on
       susfs_log:
-        description: "Aktifkan logging SUSFS untuk debugging."
+        description: "Mengaktifkan log SUSFS; berguna untuk debugging, dengan tambahan aktivitas logging."
         type: choice
         required: true
         default: off
@@ -57,7 +57,7 @@ on:
           - off
           - on
       clang:
-        description: "Pilih versi Android Clang untuk kompilasi."
+        description: "Menentukan compiler; memengaruhi proses dan hasil kompilasi, bukan fitur runtime secara langsung."
         type: choice
         required: true
         default: r383902b
@@ -67,7 +67,7 @@ on:
           - r370808
           - r365631c
       performance_profile:
-        description: "Pilih preset scheduler dan preemption kernel."
+        description: "Mengatur karakter scheduler/preemption; memengaruhi responsivitas dan perilaku multitasking."
         type: choice
         required: true
         default: performance
@@ -77,7 +77,7 @@ on:
           - balanced
           - latency
       hz:
-        description: "Atur frekuensi timer kernel."
+        description: "Mengatur frekuensi tick; nilai tinggi meningkatkan resolusi timer dan overhead, nilai rendah cenderung mengurangi overhead."
         type: choice
         required: true
         default: 1000
@@ -87,7 +87,7 @@ on:
           - 300
           - 1000
       cpu_governor:
-        description: "Pilih governor CPU default."
+        description: "Mengatur respons frekuensi CPU terhadap beban; berdampak pada performa dan konsumsi daya."
         type: choice
         required: true
         default: performance
@@ -98,7 +98,7 @@ on:
           - ondemand
           - stock
       io_scheduler:
-        description: "Pilih scheduler I/O storage default."
+        description: "Mengatur antrean akses storage; berdampak pada latensi dan throughput I/O."
         type: choice
         required: true
         default: cfq
@@ -108,7 +108,7 @@ on:
           - deadline
           - stock
       tcp_congestion:
-        description: "Pilih congestion control TCP default."
+        description: "Mengatur perilaku kontrol trafik TCP; berdampak pada throughput dan respons jaringan."
         type: choice
         required: true
         default: bbr
@@ -117,7 +117,7 @@ on:
           - cubic
           - stock
       zram_writeback:
-        description: "Aktifkan zRAM writeback ke storage."
+        description: "Memungkinkan halaman zRAM ditulis ke storage; mengurangi tekanan RAM tetapi menambah I/O storage."
         type: choice
         required: true
         default: on
@@ -125,7 +125,7 @@ on:
           - on
           - off
       psi:
-        description: "Aktifkan Pressure Stall Information."
+        description: "Mengaktifkan pemantauan tekanan resource; berguna untuk observabilitas dengan tambahan overhead."
         type: choice
         required: true
         default: off
@@ -133,7 +133,7 @@ on:
           - on
           - off
       cortex_a53_tune:
-        description: "Aktifkan optimasi compiler untuk Cortex-A53."
+        description: "Mengoptimalkan code generation untuk Cortex-A53; dapat memengaruhi ukuran dan performa kode."
         type: choice
         required: true
         default: on
