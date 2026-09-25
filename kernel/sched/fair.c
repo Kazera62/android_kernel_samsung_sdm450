@@ -82,8 +82,16 @@ walt_dec_cfs_rq_stats(struct cfs_rq *cfs_rq, struct task_struct *p) {}
  * (to see the precise effective timeslice length of your workload,
  *  run vmstat and monitor the context-switches (cs) field)
  */
+#if defined(CONFIG_KAZERA_SCHED_PROFILE_PERFORMANCE)
+unsigned int sysctl_sched_latency = 12000000ULL;
+unsigned int normalized_sysctl_sched_latency = 12000000ULL;
+#elif defined(CONFIG_KAZERA_SCHED_PROFILE_LATENCY)
+unsigned int sysctl_sched_latency = 3000000ULL;
+unsigned int normalized_sysctl_sched_latency = 3000000ULL;
+#else
 unsigned int sysctl_sched_latency = 6000000ULL;
 unsigned int normalized_sysctl_sched_latency = 6000000ULL;
+#endif
 
 unsigned int sysctl_sched_is_big_little = 1;
 unsigned int sysctl_sched_sync_hint_enable = 1;
@@ -110,8 +118,16 @@ enum sched_tunable_scaling sysctl_sched_tunable_scaling
  * Minimal preemption granularity for CPU-bound tasks:
  * (default: 0.75 msec * (1 + ilog(ncpus)), units: nanoseconds)
  */
+#if defined(CONFIG_KAZERA_SCHED_PROFILE_PERFORMANCE)
+unsigned int sysctl_sched_min_granularity = 1500000ULL;
+unsigned int normalized_sysctl_sched_min_granularity = 1500000ULL;
+#elif defined(CONFIG_KAZERA_SCHED_PROFILE_LATENCY)
+unsigned int sysctl_sched_min_granularity = 375000ULL;
+unsigned int normalized_sysctl_sched_min_granularity = 375000ULL;
+#else
 unsigned int sysctl_sched_min_granularity = 750000ULL;
 unsigned int normalized_sysctl_sched_min_granularity = 750000ULL;
+#endif
 
 /*
  * is kept at sysctl_sched_latency / sysctl_sched_min_granularity
