@@ -74,7 +74,7 @@ write_boot; # use flash_boot to skip ramdisk repack, e.g. for devices with init_
 #reset_ak;
 
 # vendor_kernel_boot install
-#split_boot; # skip ramdisk unpack/repack, e.g. for dtb on devices with hdr v4 and vendor_kernel_boot
+#split_boot; # skip unpack/repack ramdisk, e.g. for dtb on devices with hdr v4 and vendor_kernel_boot
 
 #flash_boot;
 ## end vendor_kernel_boot install
