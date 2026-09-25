@@ -532,10 +532,11 @@ jobs:
           if [ "$CORTEX_TUNE" = "on" ]; then KCFLAGS="-mcpu=cortex-a53+crypto"; else KCFLAGS=""; fi
 
           make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" KCFLAGS="$KCFLAGS" dtbs -j"$(nproc)"
-          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" KCFLAGS="$KCFLAGS" Image.gz vmlinux -j"$(nproc)"
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" KCFLAGS="$KCFLAGS" Image.gz-dtb vmlinux -j"$(nproc)"
           NM=llvm-nm scripts/mksysmap out/vmlinux out/System.map
 
           test -s out/arch/arm64/boot/Image.gz
+          test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/vmlinux
           test -s out/System.map
           test -d out/arch/arm64/boot/dts/samsung
@@ -584,15 +585,92 @@ jobs:
 
           tar -C dist -czf "kazera-m11-kernel-$(git rev-parse --short=7 HEAD)-$ROOT_IMPL-$CLANG_VERSION.tar.gz" .
 
-          TELEGRAM_ZIP="$GITHUB_WORKSPACE/dist/${KERNEL_NAME_SLUG}-kernel-${GITHUB_RUN_NUMBER}.zip"
-          rm -f "$TELEGRAM_ZIP"
-          (
-            cd dist
-            zip -r9 "${KERNEL_NAME_SLUG}-kernel-${GITHUB_RUN_NUMBER}.zip" \
-              Image.gz System.map .config BUILD_INFO.txt kazera-build-env.txt SHA256SUMS dtb/samsung
+          AK3_COMMIT="fdf4603a407048740191a478229b294a714949f8"
+          rm -rf .anykernel3
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git .anykernel3
+          git -C .anykernel3 fetch --depth=1 origin "$AK3_COMMIT"
+          git -C .anykernel3 checkout --detach "$AK3_COMMIT"
+          test "$(git -C .anykernel3 rev-parse HEAD)" = "$AK3_COMMIT"
+
+          cp out/arch/arm64/boot/Image.gz-dtb .anykernel3/Image.gz-dtb
+          cp anykernel3/anykernel.sh .anykernel3/anykernel.sh
+
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          path = pathlib.Path(".anykernel3/anykernel.sh")
+          text = path.read_text(encoding="utf-8")
+          name = os.environ.get("KERNEL_NAME_INPUT", "KernelSU Next for Galaxy A11/M11 ARM64-Only")
+          name = name.replace(chr(13), " ").replace(chr(10), " ").replace(chr(39), "")
+          name = re.sub(r"\s+", " ", name).strip()
+          if not name:
+              name = "KernelSU Next for Galaxy A11/M11 ARM64-Only"
+
+          text, count = re.subn(
+              r"^kernel\.string=.*$"
+              lambda _: "kernel.string=" + name,
+              text,
+              count=1,
+              flags=re.M,
           )
+          if count != 1:
+              raise SystemExit("kernel.string line not found exactly once")
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          test -s .anykernel3/Image.gz-dtb
+          test -s .anykernel3/anykernel.sh
+          test -s .anykernel3/tools/ak3-core.sh
+          test -x .anykernel3/tools/magiskboot
+          test -f .anykernel3/META-INF/com/google/android/update-binary
+          test -f .anykernel3/META-INF/com/google/android/updater-script
+
+          bash -n .anykernel3/anykernel.sh
+          grep -Fq "device.name1=sdm450" .anykernel3/anykernel.sh
+          grep -Fq "device.name2=m11q" .anykernel3/anykernel.sh
+          grep -Fq "device.name3=a11q" .anykernel3/anykernel.sh
+          grep -Fq "BLOCK=/dev/block/by-name/boot" .anykernel3/anykernel.sh
+          grep -Fq "IS_SLOT_DEVICE=0" .anykernel3/anykernel.sh
+          grep -Fq "do.modules=0" .anykernel3/anykernel.sh
+          grep -Fq "do.systemless=0" .anykernel3/anykernel.sh
+
+          {
+            echo "kernel_name=$KERNEL_NAME_INPUT"
+            echo "kernel_name_slug=$KERNEL_NAME_SLUG"
+            echo "root_impl=$ROOT_IMPL"
+            echo "kpm=$KPM_ENABLE"
+            echo "susfs=$SUSFS_ENABLE"
+            echo "susfs_log=$SUSFS_LOG"
+            echo "clang=$CLANG_VERSION"
+            echo "performance_profile=$PERF_PROFILE"
+            echo "hz=$HZ_CHOICE"
+            echo "cpu_governor=$CPU_GOV"
+            echo "io_scheduler=$IO_SCHED"
+            echo "tcp_congestion=$TCP_CONG"
+            echo "zram_writeback=$ZRAM_WB"
+            echo "psi=$PSI_ENABLE"
+            echo "cortex_a53_tune=$CORTEX_TUNE"
+            echo "base_config=a11q_open_defconfig"
+            echo "target=Samsung SM-M11 / SM-A11 (SDM450)"
+            echo "anykernel3_commit=$AK3_COMMIT"
+            echo "kernel_release=$(make -s O=out kernelrelease)"
+          } > .anykernel3/KAZERA_BUILD_INFO.txt
+
+          (
+            cd .anykernel3
+            sha256sum Image.gz-dtb anykernel.sh KAZERA_BUILD_INFO.txt > KAZERA_SHA256SUMS
+            zip -r9 "$GITHUB_WORKSPACE/dist/${KERNEL_NAME_SLUG}-AnyKernel3-${GITHUB_RUN_NUMBER}.zip" . -x ".git/*"
+          )
+
+          TELEGRAM_ZIP="$GITHUB_WORKSPACE/dist/${KERNEL_NAME_SLUG}-AnyKernel3-${GITHUB_RUN_NUMBER}.zip"
           test -s "$TELEGRAM_ZIP"
           unzip -tq "$TELEGRAM_ZIP"
+          unzip -l "$TELEGRAM_ZIP" | grep -q "Image.gz-dtb"
+          unzip -l "$TELEGRAM_ZIP" | grep -q "anykernel.sh"
+          unzip -l "$TELEGRAM_ZIP" | grep -q "META-INF/com/google/android/update-binary"
+          unzip -l "$TELEGRAM_ZIP" | grep -q "tools/ak3-core.sh"
           printf 'TELEGRAM_ZIP=%s\n' "$TELEGRAM_ZIP" >> "$GITHUB_ENV"
 
       - name: Upload kernel artifacts
@@ -608,7 +686,7 @@ jobs:
             dist/BUILD_INFO.txt
             dist/SHA256SUMS
             dist/kazera-m11-kernel-*.tar.gz
-            dist/*.zip
+            dist/*-AnyKernel3-*.zip
             dist/dtb/samsung/*.dtb
             dist/dtb/samsung/*.dtbo
           if-no-files-found: error
