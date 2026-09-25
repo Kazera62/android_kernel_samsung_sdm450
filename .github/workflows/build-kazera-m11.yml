@@ -398,8 +398,9 @@ jobs:
               scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
               scripts/config --file out/.config --enable PREEMPT_NONE
               scripts/config --file out/.config --enable CPU_BOOST
-              scripts/config --file out/.config --enable SCHED_AUTOGROUP
+              scripts/config --file out/.config --enable SCHED_WALT
               scripts/config --file out/.config --enable SCHED_TUNE
+              scripts/config --file out/.config --disable SCHED_AUTOGROUP
               ;;
             balanced)
               scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
