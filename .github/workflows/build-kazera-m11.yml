@@ -409,10 +409,12 @@ jobs:
 
           scripts/config --file out/.config --disable PSI
 
+          # SukiSU-Ultra v4.2.0 requires KPROBES for its kernel hook backend.
+          # KPM is intentionally disabled and is not exposed as a workflow option.
           if [ "$ROOT_IMPL" = "sukisu-ultra" ]; then
             scripts/config --file out/.config --enable KPROBES
             scripts/config --file out/.config --enable HAVE_KPROBES
-            scripts/config --file out/.config --enable KPROBE_EVENTS
+            scripts/config --enable KPROBE_EVENTS --file out/.config
             scripts/config --file out/.config --enable KSU
             scripts/config --file out/.config --enable KSU_MANUAL_SU
             scripts/config --file out/.config --disable KSU_DEBUG || true
@@ -420,6 +422,8 @@ jobs:
           else
             scripts/config --file out/.config --disable KSU || true
             scripts/config --file out/.config --disable KPM || true
+            scripts/config --file out/.config --disable KPROBES || true
+            scripts/config --file out/.config --disable KPROBE_EVENTS || true
           fi
 
           if [ "$CORTEX_TUNE" = "on" ]; then
