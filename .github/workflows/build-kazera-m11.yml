@@ -18,10 +18,10 @@ on:
         description: "Kirim ZIP AnyKernel3 hasil build ke Telegram."
         type: choice
         required: true
-        default: off
+        default: "off"
         options:
-          - off
-          - on
+          - "off"
+          - "on"
       root_impl:
         description: "Pilih implementasi root kernel."
         type: choice
@@ -36,18 +36,18 @@ on:
         description: "Aktifkan KPM untuk SukiSU-Ultra pada kernel 4.9."
         type: choice
         required: true
-        default: off
+        default: "off"
         options:
-          - off
-          - on
+          - "off"
+          - "on"
       susfs:
         description: "Aktifkan SUSFS untuk ReSukiSU pada kernel 4.9."
         type: choice
         required: true
-        default: off
+        default: "off"
         options:
-          - off
-          - on
+          - "off"
+          - "on"
       clang:
         description: "Pilih Android Clang toolchain untuk kompilasi kernel."
         type: choice
@@ -87,7 +87,7 @@ on:
           - performance
           - schedutil
           - interactive
-          - ondemand
+          - "on"demand
           - stock
       io_scheduler:
         description: "Pilih block I/O scheduler default."
@@ -112,18 +112,18 @@ on:
         description: "Aktifkan zRAM writeback ke storage."
         type: choice
         required: true
-        default: on
+        default: "on"
         options:
-          - on
-          - off
+          - "on"
+          - "off"
       cortex_a53_tune:
         description: "Aktifkan compiler tuning untuk Cortex-A53."
         type: choice
         required: true
-        default: on
+        default: "on"
         options:
-          - on
-          - off
+          - "on"
+          - "off"
 
 permissions:
   contents: read
