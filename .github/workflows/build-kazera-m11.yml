@@ -576,6 +576,7 @@ jobs:
               test "$(grep -c "^CONFIG_KPM=y$" out/.config)" -eq 1
               test "$(grep -c "^CONFIG_KALLSYMS_ALL=y$" out/.config)" -eq 1
               test "$(grep -c "^CONFIG_KSU_SUSFS=y$" out/.config)" -eq 0
+              test "$(grep -c "^CONFIG_KPROBES=y$" out/.config)" -eq 0
               ;;
             sukisu-ultra:off:off)
               test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
