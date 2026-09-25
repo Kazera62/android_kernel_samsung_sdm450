@@ -148,8 +148,7 @@ env:
   ARCH: arm64
   SUBARCH: arm64
   CC: clang
-  LD: ld.lld
-  LDFLAGS: -m aarch64linux
+  LD: aarch64-linux-gnu-ld
   CLANG_TRIPLE: aarch64-linux-gnu-
   CROSS_COMPILE: aarch64-linux-gnu-
   CROSS_COMPILE_ARM32: arm-linux-gnueabi-
@@ -209,7 +208,7 @@ jobs:
           command -v clang
           command -v ld.lld
           clang --version
-          ld.lld --version
+          aarch64-linux-gnu-ld --version
           aarch64-linux-gnu-gcc --version | head -n 1
           arm-linux-gnueabi-gcc --version | head -n 1
       - name: Validate root feature combinations
