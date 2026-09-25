@@ -22,32 +22,6 @@ on:
         options:
           - "off"
           - "on"
-      root_impl:
-        description: "Pilih implementasi root kernel."
-        type: choice
-        required: true
-        default: none
-        options:
-          - none
-          - kernelsu-next
-          - sukisu-ultra
-          - resukisu
-      kpm:
-        description: "Aktifkan KPM untuk SukiSU-Ultra pada kernel 4.9."
-        type: choice
-        required: true
-        default: "off"
-        options:
-          - "off"
-          - "on"
-      susfs:
-        description: "Aktifkan SUSFS untuk ReSukiSU pada kernel 4.9."
-        type: choice
-        required: true
-        default: "off"
-        options:
-          - "off"
-          - "on"
       clang:
         description: "Pilih Android Clang toolchain untuk kompilasi kernel."
         type: choice
@@ -135,10 +109,6 @@ concurrency:
 env:
   KERNEL_NAME_INPUT: ${{ inputs.kernel_name || 'Kazera M11/A11' }}
   TELEGRAM_ENABLE: ${{ inputs.telegram || 'off' }}
-  ROOT_IMPL: ${{ inputs.root_impl || 'none' }}
-  ROOT_INTEGRATION_REF: ${{ inputs.root_impl == 'kernelsu-next' && '194a4d0531bba5810a7d0a1014acbbf34d9ae284' || inputs.root_impl == 'sukisu-ultra' && 'b20dee702035af09cb2ecb5f35443bbc1747f3e6' || inputs.root_impl == 'resukisu' && '6803643e19e2e6e8287f96461aabb93bdd6c47fa' || 'none' }}
-  KPM_ENABLE: ${{ inputs.kpm || 'off' }}
-  SUSFS_ENABLE: ${{ inputs.susfs || 'off' }}
   CLANG_VERSION: ${{ inputs.clang || 'r383902b' }}
   PERF_PROFILE: ${{ inputs.performance_profile || 'performance' }}
   HZ_CHOICE: ${{ inputs.hz || '1000' }}
@@ -149,8 +119,6 @@ env:
   CORTEX_TUNE: ${{ inputs.cortex_a53_tune || 'on' }}
   ANYKERNEL3_REPO: https://github.com/Kazera62/AnyKernel3.git
   ANYKERNEL3_REF: 0ab72a279369da34644860a256eba3f2e8142dad
-  KERNEL_FIXES_REPO: https://github.com/Kazera62/kernel_fixes.git
-  KERNEL_FIXES_REF: 10ca24f1d638c9d79ca61f27818734278566df06
   ARCH: arm64
   SUBARCH: arm64
   CC: clang
@@ -218,91 +186,6 @@ jobs:
           aarch64-linux-gnu-ld --version
           aarch64-linux-gnu-gcc --version | head -n 1
           arm-linux-gnueabi-gcc --version | head -n 1
-      - name: Validate root feature combinations
-        shell: bash
-        run: |
-          set -euxo pipefail
-          if [ "$KPM_ENABLE" = "on" ] && [ "$ROOT_IMPL" != "sukisu-ultra" ]; then
-            echo "KPM is wired to SukiSU-Ultra in this 4.9 workflow." >&2
-            exit 1
-          fi
-          if [ "$SUSFS_ENABLE" = "on" ] && [ "$ROOT_IMPL" != "resukisu" ]; then
-            echo "SUSFS is wired to ReSukiSU in this 4.9 workflow." >&2
-            exit 1
-          fi
-          if [ "$KPM_ENABLE" = "on" ] && [ "$SUSFS_ENABLE" = "on" ]; then
-            echo "Select either SukiSU-Ultra+KPM or ReSukiSU+SUSFS." >&2
-            exit 1
-          fi
-
-      - name: Integrate selected root implementation
-        if: env.ROOT_IMPL != 'none'
-        shell: bash
-        run: |
-          set -euxo pipefail
-          case "$ROOT_IMPL" in
-            kernelsu-next)
-              curl -fLSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/194a4d0531bba5810a7a0d1014acbbf34d9ae284/kernel/setup.sh" | bash -s 194a4d0531bba5810a7d0a1014acbbf34d9ae284
-              ;;
-            sukisu-ultra)
-              curl -fLSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/b20dee702035af09cb2ecb5f35443bbc1747f3e6/kernel/setup.sh" | bash -s b20dee702035af09cb2ecb5f35443bbc1747f3e6
-              ;;
-            resukisu)
-              curl -fLSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/6803643e19e2e6e8287f96461aabb93bdd6c47fa/kernel/setup.sh" | bash -s 6803643e19e2e6e8287f96461aabb93bdd6c47fa
-              ;;
-            *)
-              echo "Unsupported root implementation: $ROOT_IMPL" >&2
-              exit 1
-              ;;
-          esac
-
-      - name: Validate root integration
-        if: env.ROOT_IMPL != 'none'
-        shell: bash
-        run: |
-          set -euxo pipefail
-          test -d drivers/kernelsu
-          test -s drivers/kernelsu/Kconfig
-          grep -Fq 'CONFIG_KSU' drivers/Makefile
-          grep -Fq 'drivers/kernelsu/Kconfig' drivers/Kconfig
-
-          if [ "$KPM_ENABLE" = "on" ]; then
-            grep -Rqs 'config KPM' drivers/kernelsu
-          fi
-
-          if [ "$SUSFS_ENABLE" = "on" ]; then
-            test -s fs/susfs.c
-            test -s include/linux/susfs.h
-            test -s include/linux/susfs_def.h
-          fi
-
-          echo 'Root integration checks passed.'
-      - name: Apply kernel compatibility fixes
-        if: env.ROOT_IMPL != 'none'
-        shell: bash
-        run: |
-          set -euxo pipefail
-          rm -rf .kernel-fixes
-          mkdir -p .kernel-fixes
-          git -C .kernel-fixes init
-          git -C .kernel-fixes remote add origin "$KERNEL_FIXES_REPO"
-          git -C .kernel-fixes fetch --depth=1 origin "$KERNEL_FIXES_REF"
-          git -C .kernel-fixes checkout --detach FETCH_HEAD
-          test "$(git -C .kernel-fixes rev-parse HEAD)" = "$KERNEL_FIXES_REF"
-
-          bash .kernel-fixes/scripts/apply-fixes.sh \
-            --kernel-root "$GITHUB_WORKSPACE" \
-            --device sdm450 \
-            --root "$ROOT_IMPL" \
-            --kpm "$KPM_ENABLE" \
-            --susfs "$SUSFS_ENABLE"
-
-          bash .kernel-fixes/scripts/verify-fixes.sh \
-            --kernel-root "$GITHUB_WORKSPACE" \
-            --device sdm450 \
-            --root "$ROOT_IMPL" \
-            --kpm "$KPM_ENABLE" \
-            --susfs "$SUSFS_ENABLE"
       - name: Validate kernel feature support
         shell: bash
         run: |
@@ -355,67 +238,6 @@ jobs:
           scripts/config --file out/.config --enable ARCH_ZQL1871
           scripts/config --file out/.config --enable ARCH_SDM450
           scripts/config --file out/.config --enable ARCH_MSM8953
-
-          # Normalize root-related options from the base defconfig first.
-          # This prevents pre-existing KSU/SUSFS/KPM symbols from leaking into
-          # a build mode where they were explicitly disabled.
-          scripts/config --file out/.config --disable KSU || true
-          scripts/config --file out/.config --disable KSU_MANUAL_HOOK || true
-          scripts/config --file out/.config --disable KPM || true
-          scripts/config --file out/.config --disable KSU_SUSFS || true
-          for susfs_cfg in \
-            KSU_SUSFS_SUS_PATH \
-            KSU_SUSFS_SUS_MOUNT \
-            KSU_SUSFS_SUS_KSTAT \
-            KSU_SUSFS_SPOOF_UNAME \
-            KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-            KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-            KSU_SUSFS_OPEN_REDIRECT \
-            KSU_SUSFS_SUS_MAP \
-            KSU_SUSFS_ENABLE_LOG
-          do
-            scripts/config --file out/.config --disable "$susfs_cfg" || true
-          done
-
-          case "$ROOT_IMPL" in
-            none)
-              ;;
-            kernelsu-next)
-              scripts/config --file out/.config --enable KSU
-              scripts/config --file out/.config --enable KSU_MANUAL_HOOK
-              ;;
-            sukisu-ultra)
-              scripts/config --file out/.config --disable KPROBES
-              scripts/config --file out/.config --enable EXT4_FS
-              scripts/config --file out/.config --enable KSU
-              if [ "$KPM_ENABLE" = "on" ]; then
-                scripts/config --file out/.config --enable KALLSYMS
-                scripts/config --file out/.config --enable KALLSYMS_ALL
-                scripts/config --file out/.config --enable KPM
-              fi
-              ;;
-            resukisu)
-              scripts/config --file out/.config --enable KSU
-              if [ "$SUSFS_ENABLE" = "on" ]; then
-                scripts/config --file out/.config --enable KSU_SUSFS
-                scripts/config --file out/.config --enable KSU_SUSFS_SUS_PATH
-                scripts/config --file out/.config --enable KSU_SUSFS_SUS_MOUNT
-                scripts/config --file out/.config --enable KSU_SUSFS_SUS_KSTAT
-                scripts/config --file out/.config --enable KSU_SUSFS_SPOOF_UNAME
-                scripts/config --file out/.config --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-                scripts/config --file out/.config --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-                scripts/config --file out/.config --enable KSU_SUSFS_OPEN_REDIRECT
-                scripts/config --file out/.config --enable KSU_SUSFS_SUS_MAP
-                scripts/config --file out/.config --disable KSU_SUSFS_ENABLE_LOG
-              else
-                scripts/config --file out/.config --enable KSU_MANUAL_HOOK
-              fi
-              ;;
-            *)
-              echo "Unsupported root implementation: $ROOT_IMPL" >&2
-              exit 1
-              ;;
-          esac
 
           for profile in PERFORMANCE BALANCED LATENCY; do
             scripts/config --file out/.config --disable "KAZERA_SCHED_PROFILE_$profile" || true
@@ -570,42 +392,6 @@ jobs:
           test "$(grep -c "^CONFIG_ARCH_SDM450=y$" out/.config)" -eq 1
           test "$(grep -c "^CONFIG_ARCH_MSM8953=y$" out/.config)" -eq 1
 
-          case "$ROOT_IMPL:$KPM_ENABLE:$SUSFS_ENABLE" in
-            sukisu-ultra:on:off)
-              test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
-              test "$(grep -c "^CONFIG_KPM=y$" out/.config)" -eq 1
-              test "$(grep -c "^CONFIG_KALLSYMS_ALL=y$" out/.config)" -eq 1
-              test "$(grep -c "^CONFIG_KSU_SUSFS=y$" out/.config)" -eq 0
-              test "$(grep -c "^CONFIG_KPROBES=y$" out/.config)" -eq 0
-              ;;
-            sukisu-ultra:off:off)
-              test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
-              test "$(grep -c "^CONFIG_KPM=y$" out/.config)" -eq 0
-              test "$(grep -c "^CONFIG_KSU_SUSFS=y$" out/.config)" -eq 0
-              test "$(grep -c "^CONFIG_KPROBES=y$" out/.config)" -eq 0
-              ;;
-            resukisu:on:off)
-              echo "Invalid configuration: KPM requires SukiSU Ultra and cannot be combined with ReSukiSU." >&2
-              exit 1
-              ;;
-            resukisu:off:on)
-              test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
-              test "$(grep -c "^CONFIG_KSU_SUSFS=y$" out/.config)" -eq 1
-              test -s fs/susfs.c
-              test -s include/linux/susfs.h
-              test -s include/linux/susfs_def.h
-              ;;
-            kernelsu-next:off:off)
-              test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
-              test "$(grep -c "^CONFIG_KSU_MANUAL_HOOK=y$" out/.config)" -eq 1
-              ;;
-            none:off:off)
-              ;;
-            *)
-              echo "Unexpected feature combination after configuration." >&2
-              exit 1
-              ;;
-          esac
       - name: Build kernel and DTBs
         shell: bash
         run: |
@@ -636,10 +422,6 @@ jobs:
           {
             echo "kernel_name=$KERNEL_NAME_INPUT"
             echo "kernel_name_slug=$KERNEL_NAME_SLUG"
-            echo "root_impl=$ROOT_IMPL"
-            echo "root_integration_ref=$ROOT_INTEGRATION_REF"
-            echo "kpm=$KPM_ENABLE"
-            echo "susfs=$SUSFS_ENABLE"
             echo "clang=$CLANG_VERSION"
             echo "performance_profile=$PERF_PROFILE"
             echo "hz=$HZ_CHOICE"
@@ -784,7 +566,6 @@ jobs:
             exit 1
           fi
 
-          CAPTION="$KERNEL_NAME_INPUT | run #$GITHUB_RUN_NUMBER | root=$ROOT_IMPL | HZ=$HZ_CHOICE | CPU=$CPU_GOV | IO=$IO_SCHED | TCP=$TCP_CONG"
 
           RESPONSE="$(curl -fsS --retry 3 --retry-all-errors \
             -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
