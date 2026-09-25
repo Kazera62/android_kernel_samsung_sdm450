@@ -748,7 +748,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: package-anykernel3
-    if: needs.package-anykernel3.result == 'success' && env.TELEGRAM_ENABLE == 'on'
+    if: needs.package-anykernel3.result == 'success' && inputs.telegram == 'on'
 
     steps:
       - name: Download AnyKernel3 artifact
