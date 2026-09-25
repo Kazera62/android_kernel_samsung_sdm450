@@ -406,15 +406,17 @@ jobs:
               scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
               scripts/config --file out/.config --enable PREEMPT_VOLUNTARY
               scripts/config --file out/.config --enable CPU_BOOST
-              scripts/config --file out/.config --enable SCHED_AUTOGROUP
+              scripts/config --file out/.config --enable SCHED_WALT
               scripts/config --file out/.config --enable SCHED_TUNE
+              scripts/config --file out/.config --disable SCHED_AUTOGROUP
               ;;
             latency)
               scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
               scripts/config --file out/.config --enable PREEMPT
               scripts/config --file out/.config --enable CPU_BOOST
-              scripts/config --file out/.config --enable SCHED_AUTOGROUP
+              scripts/config --file out/.config --enable SCHED_WALT
               scripts/config --file out/.config --enable SCHED_TUNE
+              scripts/config --file out/.config --disable SCHED_AUTOGROUP
               ;;
             *)
               echo "Unsupported performance profile: $PERF_PROFILE" >&2
