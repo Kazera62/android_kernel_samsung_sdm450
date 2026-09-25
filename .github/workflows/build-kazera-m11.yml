@@ -178,7 +178,7 @@ jobs:
           set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential flex git curl rsync \
-            libelf-dev libssl-dev device-tree-compiler cpio gzip \
+            libelf-dev libssl-dev device-tree-compiler cpio gzip patch \
             binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi zip unzip
 
