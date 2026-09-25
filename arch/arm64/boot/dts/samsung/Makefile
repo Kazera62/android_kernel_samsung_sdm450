@@ -125,8 +125,7 @@ dtb-$(CONFIG_ARCH_MSM8937) += msm8937-pmi8950-mtp.dtb \
 	msm8937-interposer-sdm429-cdp.dtb \
 	msm8937-interposer-sdm429-mtp.dtb
 
-dtb-$(CONFIG_ARCH_SDM450) += sdm450.dtb \
-\tsdm450-pmi632.dtb
+dtb-$(CONFIG_ARCH_SDM450) += sdm450.dtb sdm450-pmi632.dtb
 
 dtb-$(CONFIG_ARCH_SDM439) += sdm439-mtp.dtb \
 	sdm439-cdp.dtb \
