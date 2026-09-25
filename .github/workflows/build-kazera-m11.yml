@@ -599,7 +599,7 @@ jobs:
             curl -fL "https://raw.githubusercontent.com/osm0sis/AnyKernel3/$AK3_COMMIT/tools/$tool" -o ".anykernel3/tools/$tool"
             chmod 755 ".anykernel3/tools/$tool"
           done
-          sha256sum -c anykernel3/TOOLS_SHA256SUMS.txt
+          (cd .anykernel3 && sha256sum -c TOOLS_SHA256SUMS.txt)
 
           cp out/arch/arm64/boot/Image.gz-dtb .anykernel3/Image.gz-dtb
 
