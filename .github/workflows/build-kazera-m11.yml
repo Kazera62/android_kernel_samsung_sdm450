@@ -158,7 +158,8 @@ env:
   CROSS_COMPILE_ARM32: arm-linux-gnueabi-
 
 jobs:
-  build:
+  build-kernel:
+    name: "Build Kazera M11/A11"
     runs-on: ubuntu-24.04
     timeout-minutes: 90
 
@@ -589,53 +590,14 @@ jobs:
           test -d out/arch/arm64/boot/dts/samsung
           test -n "$(find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print -quit)"
           find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print | sort
-      - name: Package AnyKernel3
+      - name: Prepare kernel artifact
         shell: bash
         run: |
           set -euxo pipefail
-          rm -rf dist
-          mkdir -p dist
+          rm -rf build-artifact
+          mkdir -p build-artifact
 
-          rm -rf .anykernel3
-          git clone --depth=1 "$ANYKERNEL3_REPO" .anykernel3
-          git -C .anykernel3 fetch --depth=1 origin "$ANYKERNEL3_REF"
-          git -C .anykernel3 checkout --detach "$ANYKERNEL3_REF"
-          test "$(git -C .anykernel3 rev-parse HEAD)" = "$ANYKERNEL3_REF"
-
-          test -s .anykernel3/anykernel.sh
-          test -s .anykernel3/tools/ak3-core.sh
-          test -s .anykernel3/META-INF/com/google/android/update-binary
-          test -s .anykernel3/META-INF/com/google/android/updater-script
-
-          grep -Fq "device.name1=sdm450" .anykernel3/anykernel.sh
-          grep -Fq "device.name2=m11q" .anykernel3/anykernel.sh
-          grep -Fq "device.name3=a11q" .anykernel3/anykernel.sh
-          grep -Fq "BLOCK=/dev/block/by-name/boot" .anykernel3/anykernel.sh
-          grep -Fq "IS_SLOT_DEVICE=0" .anykernel3/anykernel.sh
-          grep -Fq "do.modules=0" .anykernel3/anykernel.sh
-          grep -Fq "do.systemless=0" .anykernel3/anykernel.sh
-          bash -n .anykernel3/anykernel.sh
-
-          cp out/arch/arm64/boot/Image.gz-dtb .anykernel3/Image.gz-dtb
-
-          python3 - <<'PY'
-          import os
-          import pathlib
-          import re
-
-          path = pathlib.Path(".anykernel3/anykernel.sh")
-          text = path.read_text(encoding="utf-8")
-          name = os.environ.get("KERNEL_NAME_INPUT", "Kazera M11/A11")
-          name = name.replace(chr(13), " ").replace(chr(10), " ").replace(chr(39), "")
-          name = re.sub(r"\s+", " ", name).strip() or "Kazera M11/A11"
-          text, count = re.subn(r"^kernel\.string=.*$", lambda _: "kernel.string=" + name, text, count=1, flags=re.M)
-          if count != 1:
-              raise SystemExit("kernel.string line not found exactly once")
-          path.write_text(text, encoding="utf-8")
-          PY
-
-          test -s .anykernel3/Image.gz-dtb
-          bash -n .anykernel3/anykernel.sh
+          cp out/arch/arm64/boot/Image.gz-dtb build-artifact/Image.gz-dtb
 
           {
             echo "kernel_name=$KERNEL_NAME_INPUT"
@@ -657,12 +619,100 @@ jobs:
             echo "anykernel3_repo=$ANYKERNEL3_REPO"
             echo "anykernel3_ref=$ANYKERNEL3_REF"
             echo "kernel_release=$(make -s O=out kernelrelease)"
-          } > .anykernel3/KAZERA_BUILD_INFO.txt
+            echo "git_commit=$GITHUB_SHA"
+          } > build-artifact/KAZERA_BUILD_INFO.txt
 
+          test -s build-artifact/Image.gz-dtb
+          test -s build-artifact/KAZERA_BUILD_INFO.txt
+
+      - name: Upload kernel artifact
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: kazera-m11-build-${{ github.run_number }}
+          path: build-artifact/*
+          if-no-files-found: error
+          retention-days: 1
+
+  package-anykernel3:
+    name: "Package AnyKernel3"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs: build-kernel
+
+    steps:
+      - name: Download kernel artifact
+        uses: actions/download-artifact@v7.0.1
+        with:
+          name: kazera-m11-build-${{ github.run_number }}
+          path: build-artifact
+
+      - name: Install packaging dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y zip unzip git
+
+      - name: Package AnyKernel3
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf dist .anykernel3
+          mkdir -p dist
+
+          test -s build-artifact/Image.gz-dtb
+          test -s build-artifact/KAZERA_BUILD_INFO.txt
+          KERNEL_NAME_INPUT="$(sed -n 's/^kernel_name=//p' build-artifact/KAZERA_BUILD_INFO.txt)"
+          KERNEL_NAME_SLUG="$(sed -n 's/^kernel_name_slug=//p' build-artifact/KAZERA_BUILD_INFO.txt)"
+          [ -n "$KERNEL_NAME_INPUT" ] || KERNEL_NAME_INPUT="Kazera M11/A11"
+          [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="Kazera-M11-A11"
+
+          git clone --depth=1 "$ANYKERNEL3_REPO" .anykernel3
+          git -C .anykernel3 fetch --depth=1 origin "$ANYKERNEL3_REF"
+          git -C .anykernel3 checkout --detach "$ANYKERNEL3_REF"
+          test "$(git -C .anykernel3 rev-parse HEAD)" = "$ANYKERNEL3_REF"
+
+          test -s .anykernel3/anykernel.sh
+          test -s .anykernel3/tools/ak3-core.sh
+          test -s .anykernel3/META-INF/com/google/android/update-binary
+          test -s .anykernel3/META-INF/com/google/android/updater-script
+          grep -Fq "device.name1=sdm450" .anykernel3/anykernel.sh
+          grep -Fq "device.name2=m11q" .anykernel3/anykernel.sh
+          grep -Fq "device.name3=a11q" .anykernel3/anykernel.sh
+          grep -Fq "BLOCK=/dev/block/by-name/boot" .anykernel3/anykernel.sh
+          grep -Fq "IS_SLOT_DEVICE=0" .anykernel3/anykernel.sh
+          grep -Fq "do.modules=0" .anykernel3/anykernel.sh
+          grep -Fq "do.systemless=0" .anykernel3/anykernel.sh
+          bash -n .anykernel3/anykernel.sh
+
+          cp build-artifact/Image.gz-dtb .anykernel3/Image.gz-dtb
+          cp build-artifact/KAZERA_BUILD_INFO.txt .anykernel3/KAZERA_BUILD_INFO.txt
+
+          python3 - <<'PY'
+          import pathlib
+          import re
+
+          path = pathlib.Path('.anykernel3/anykernel.sh')
+          text = path.read_text(encoding='utf-8')
+          info = pathlib.Path('.anykernel3/KAZERA_BUILD_INFO.txt').read_text(encoding='utf-8')
+          match = re.search(r'^kernel_name=(.*)$', info, re.M)
+          kernel_name = (match.group(1).strip() if match else 'Kazera M11/A11')
+          kernel_name = kernel_name.replace(chr(13), ' ').replace(chr(10), ' ').replace(chr(39), '')
+          kernel_name = re.sub(r'\s+', ' ', kernel_name).strip() or 'Kazera M11/A11'
+          text, count = re.subn(r'^kernel\.string=.*$', lambda _: 'kernel.string=' + kernel_name, text, count=1, flags=re.M)
+          if count != 1:
+              raise SystemExit('kernel.string line not found exactly once')
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          test -s .anykernel3/Image.gz-dtb
+          bash -n .anykernel3/anykernel.sh
+
+          zip_path="$GITHUB_WORKSPACE/dist/$KERNEL_NAME_SLUG-AnyKernel3-$GITHUB_RUN_NUMBER.zip"
           (
             cd .anykernel3
             sha256sum Image.gz-dtb anykernel.sh KAZERA_BUILD_INFO.txt > KAZERA_SHA256SUMS
-            zip -r9 "$GITHUB_WORKSPACE/dist/${KERNEL_NAME_SLUG}-AnyKernel3-${GITHUB_RUN_NUMBER}.zip" \
+            zip -r9 "$zip_path" \
               anykernel.sh \
               Image.gz-dtb \
               META-INF \
@@ -674,18 +724,16 @@ jobs:
               KAZERA_SHA256SUMS
           )
 
-          TELEGRAM_ZIP="$GITHUB_WORKSPACE/dist/${KERNEL_NAME_SLUG}-AnyKernel3-${GITHUB_RUN_NUMBER}.zip"
-          test -s "$TELEGRAM_ZIP"
-          unzip -tq "$TELEGRAM_ZIP"
-          unzip -l "$TELEGRAM_ZIP" | grep -q "Image.gz-dtb"
-          unzip -l "$TELEGRAM_ZIP" | grep -q "anykernel.sh"
-          unzip -l "$TELEGRAM_ZIP" | grep -q "META-INF/com/google/android/update-binary"
-          unzip -l "$TELEGRAM_ZIP" | grep -q "tools/ak3-core.sh"
-          if unzip -l "$TELEGRAM_ZIP" | grep -Eq '(^|/)(README\.md|LICENSE)$|(^|/)\.github/|(^|/)\.git/'; then
+          test -s "$zip_path"
+          unzip -tq "$zip_path"
+          unzip -l "$zip_path" | grep -q "Image.gz-dtb"
+          unzip -l "$zip_path" | grep -q "anykernel.sh"
+          unzip -l "$zip_path" | grep -q "META-INF/com/google/android/update-binary"
+          unzip -l "$zip_path" | grep -q "tools/ak3-core.sh"
+          if unzip -l "$zip_path" | grep -Eq '(^|/)(README\.md|LICENSE)$|(^|/)\.github/|(^|/)\.git/'; then
             echo "Unexpected repository-only files found in AnyKernel3 ZIP." >&2
             exit 1
           fi
-          printf 'TELEGRAM_ZIP=%s\n' "$TELEGRAM_ZIP" >> "$GITHUB_ENV"
 
       - name: Upload AnyKernel3 artifact
         uses: actions/upload-artifact@v7.0.1
@@ -694,45 +742,51 @@ jobs:
           path: dist/*-AnyKernel3-*.zip
           if-no-files-found: error
           retention-days: 30
+
+  notify-telegram:
+    name: "Send ZIP to Telegram"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: package-anykernel3
+    if: needs.package-anykernel3.result == 'success' && env.TELEGRAM_ENABLE == 'on'
+
+    steps:
+      - name: Download AnyKernel3 artifact
+        uses: actions/download-artifact@v7.0.1
+        with:
+          name: kazera-m11-anykernel3-${{ github.run_number }}
+          path: dist
+
       - name: Send build ZIP to Telegram
-        if: env.TELEGRAM_ENABLE == 'on'
         shell: bash
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           set -euo pipefail
+          ZIP_PATH="$(find dist -maxdepth 1 -type f -name '*-AnyKernel3-*.zip' -print -quit)"
+          test -n "$ZIP_PATH"
+          test -s "$ZIP_PATH"
+          test -n "$TELEGRAM_BOT_TOKEN" || { echo "TELEGRAM_BOT_TOKEN secret is missing." >&2; exit 1; }
+          test -n "$TELEGRAM_CHAT_ID" || { echo "TELEGRAM_CHAT_ID secret is missing." >&2; exit 1; }
 
-          test -n "$TELEGRAM_BOT_TOKEN" || {
-            echo "TELEGRAM_BOT_TOKEN secret is missing." >&2
-            exit 1
-          }
-          test -n "$TELEGRAM_CHAT_ID" || {
-            echo "TELEGRAM_CHAT_ID secret is missing." >&2
-            exit 1
-          }
-          test -s "$TELEGRAM_ZIP"
-
-          FILE_SIZE="$(stat -c '%s' "$TELEGRAM_ZIP")"
+          FILE_SIZE="$(stat -c '%s' "$ZIP_PATH")"
           MAX_TELEGRAM_BYTES=50000000
           if [ "$FILE_SIZE" -gt "$MAX_TELEGRAM_BYTES" ]; then
             echo "Telegram ZIP is $FILE_SIZE bytes, exceeding Telegram's 50 MB bot upload limit." >&2
             exit 1
           fi
 
-          CAPTION="${KERNEL_NAME_INPUT} | run #${GITHUB_RUN_NUMBER} | root=${ROOT_IMPL} | HZ=${HZ_CHOICE} | CPU=${CPU_GOV} | IO=${IO_SCHED} | TCP=${TCP_CONG}"
+          CAPTION="$KERNEL_NAME_INPUT | run #$GITHUB_RUN_NUMBER | root=$ROOT_IMPL | HZ=$HZ_CHOICE | CPU=$CPU_GOV | IO=$IO_SCHED | TCP=$TCP_CONG"
 
-          RESPONSE="$(
-            curl -fsS --retry 3 --retry-all-errors \
-              -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
-              -F "chat_id=${TELEGRAM_CHAT_ID}" \
-              -F "document=@${TELEGRAM_ZIP};type=application/zip" \
-              -F "caption=${CAPTION}"
-          )"
+          RESPONSE="$(curl -fsS --retry 3 --retry-all-errors \
+            -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
+            -F "chat_id=$TELEGRAM_CHAT_ID" \
+            -F "document=@$ZIP_PATH;type=application/zip" \
+            -F "caption=$CAPTION")"
 
-          printf '%s\n' "$RESPONSE" |
-            grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
-              echo "Telegram API did not report success." >&2
-              printf '%s\n' "$RESPONSE" >&2
-              exit 1
-            }
+          printf '%s\n' "$RESPONSE" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
+            echo "Telegram API did not report success." >&2
+            printf '%s\n' "$RESPONSE" >&2
+            exit 1
+          }
