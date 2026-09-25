@@ -51,19 +51,35 @@ hook = Path(sys.argv[1])
 init = Path(sys.argv[2])
 kernel_dir = Path(sys.argv[3])
 
-# Linux 4.9 has linux/compiler.h but not linux/compiler_types.h.
-# Remove every direct SukiSU dependency on the newer header instead of
-# maintaining a brittle list of source files.
-removed = 0
+# Linux 4.9 has linux/compiler.h but not linux/compiler_types.h or
+# linux/pgtable.h. Remove direct dependencies on newer split headers instead
+# of maintaining a brittle list of source files.
+removed_compiler_types = 0
+removed_pgtable = 0
+untagged_rewrites = 0
 for path in kernel_dir.rglob("*"):
     if path.suffix not in {".c", ".h"} or not path.is_file():
         continue
     text = path.read_text()
     new_text = text.replace("#include <linux/compiler_types.h>\n", "")
+    new_text = new_text.replace("#include <linux/pgtable.h>\n", "")
     if new_text != text:
+        if "#include <linux/compiler_types.h>\n" in text:
+            removed_compiler_types += 1
+        if "#include <linux/pgtable.h>\n" in text:
+            removed_pgtable += 1
         path.write_text(new_text)
-        removed += 1
-print(f"[sukisu] Removed linux/compiler_types.h from {removed} SukiSU source files")
+        text = new_text
+
+    if "untagged_addr(" in text:
+        new_text = new_text.replace("untagged_addr((unsigned long)*filename_user)", "(unsigned long)*filename_user")
+        if new_text != text:
+            path.write_text(new_text)
+            untagged_rewrites += 1
+
+print(f"[sukisu] Removed linux/compiler_types.h from {removed_compiler_types} SukiSU source files")
+print(f"[sukisu] Removed linux/pgtable.h from {removed_pgtable} SukiSU source files")
+print(f"[sukisu] Rewrote untagged_addr() for Linux 4.9 in {untagged_rewrites} SukiSU source files")
 
 # SukiSU v4.2.0 uses syscall_fn_t on ARM64, but the 4.9 arm64 headers expose
 # sys_call_table as void * and do not provide the newer sys_call_ptr_t alias.
