@@ -245,7 +245,13 @@ static inline struct schedtune *parent_st(struct schedtune *st)
  */
 static struct schedtune
 root_schedtune = {
+#if defined(CONFIG_KAZERA_SCHED_PROFILE_PERFORMANCE)
+	.boost	= 10,
+#elif defined(CONFIG_KAZERA_SCHED_PROFILE_LATENCY)
+	.boost	= 20,
+#else
 	.boost	= 0,
+#endif
 #ifdef CONFIG_SCHED_WALT
 	.sched_boost_no_override = false,
 	.sched_boost_enabled = true,
@@ -253,9 +259,19 @@ root_schedtune = {
 	.colocate = false,
 	.colocate_update_disabled = false,
 #endif
+#if defined(CONFIG_KAZERA_SCHED_PROFILE_PERFORMANCE)
+	.perf_boost_idx = 1,
+	.perf_constrain_idx = 1,
+	.prefer_idle = 0,
+#elif defined(CONFIG_KAZERA_SCHED_PROFILE_LATENCY)
+	.perf_boost_idx = 2,
+	.perf_constrain_idx = 2,
+	.prefer_idle = 1,
+#else
 	.perf_boost_idx = 0,
 	.perf_constrain_idx = 0,
 	.prefer_idle = 0,
+#endif
 };
 
 int
