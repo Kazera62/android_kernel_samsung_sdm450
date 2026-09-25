@@ -10,12 +10,12 @@ on:
   workflow_dispatch:
     inputs:
       kernel_name:
-        description: "Nama kernel pada perangkat dan file ZIP; tidak memengaruhi kode kernel."
+        description: "Nama kernel pada perangkat dan file ZIP."
         type: string
         required: true
         default: "Kazera M11/A11"
       telegram:
-        description: "Kirim ZIP AnyKernel3 hasil build; tidak memengaruhi kode kernel."
+        description: "Kirim ZIP AnyKernel3 hasil build ke Telegram."
         type: choice
         required: true
         default: off
@@ -23,7 +23,7 @@ on:
           - off
           - on
       root_impl:
-        description: "Integrasi root eksternal yang ditambahkan saat build; none = source dasar."
+        description: "Pilih implementasi root kernel."
         type: choice
         required: true
         default: none
@@ -33,7 +33,7 @@ on:
           - sukisu-ultra
           - resukisu
       kpm:
-        description: "Tambahkan KPM eksternal untuk SukiSU-Ultra; bukan fitur native source."
+        description: "Aktifkan KPM untuk SukiSU-Ultra pada kernel 4.9."
         type: choice
         required: true
         default: off
@@ -41,7 +41,7 @@ on:
           - off
           - on
       susfs:
-        description: "Tambahkan patch SUSFS eksternal untuk ReSukiSU; bukan fitur native source."
+        description: "Aktifkan SUSFS untuk ReSukiSU pada kernel 4.9."
         type: choice
         required: true
         default: off
@@ -49,7 +49,7 @@ on:
           - off
           - on
       clang:
-        description: "Pilih compiler Android untuk proses build; bukan fitur runtime kernel."
+        description: "Pilih Android Clang toolchain untuk kompilasi kernel."
         type: choice
         required: true
         default: r383902b
@@ -59,7 +59,7 @@ on:
           - r370808
           - r365631c
       performance_profile:
-        description: "Mengatur opsi performa/preemption yang tersedia di source kernel."
+        description: "Pilih preset performa dan preemption kernel."
         type: choice
         required: true
         default: performance
@@ -69,7 +69,7 @@ on:
           - balanced
           - latency
       hz:
-        description: "Mengatur CONFIG_HZ; seluruh pilihan tersedia di source kernel."
+        description: "Atur frekuensi timer kernel."
         type: choice
         required: true
         default: 1000
@@ -79,7 +79,7 @@ on:
           - 300
           - 1000
       cpu_governor:
-        description: "Mengatur governor CPU default yang tersedia di source kernel."
+        description: "Pilih CPU frequency governor default."
         type: choice
         required: true
         default: performance
@@ -90,7 +90,7 @@ on:
           - ondemand
           - stock
       io_scheduler:
-        description: "Mengatur I/O scheduler default yang tersedia di source kernel."
+        description: "Pilih block I/O scheduler default."
         type: choice
         required: true
         default: cfq
@@ -100,7 +100,7 @@ on:
           - deadline
           - stock
       tcp_congestion:
-        description: "Mengatur TCP congestion control default yang tersedia di source kernel."
+        description: "Pilih TCP congestion control default."
         type: choice
         required: true
         default: bbr
@@ -109,7 +109,7 @@ on:
           - cubic
           - stock
       zram_writeback:
-        description: "Mengaktifkan ZRAM writeback yang tersedia di source kernel."
+        description: "Aktifkan zRAM writeback ke storage."
         type: choice
         required: true
         default: on
@@ -117,7 +117,7 @@ on:
           - on
           - off
       cortex_a53_tune:
-        description: "Menambahkan -mcpu=cortex-a53+crypto saat kompilasi; bukan CONFIG kernel."
+        description: "Aktifkan compiler tuning untuk Cortex-A53."
         type: choice
         required: true
         default: on
