@@ -144,6 +144,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: build-kazera-m11-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   KERNEL_NAME_INPUT: ${{ inputs.kernel_name || 'Kazera M11/A11' }}
   TELEGRAM_ENABLE: ${{ inputs.telegram || 'off' }}
