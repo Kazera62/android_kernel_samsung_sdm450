@@ -112,17 +112,17 @@ static inline long ksu_strncpy_from_user_nofault(char *dst,
         compat_header.write_text(text)
         print("[sukisu] Added Linux 4.9 strncpy_from_user compatibility shim")
 
+    import re
     replaced = 0
     for path in kernel_dir.rglob("*"):
         if path.suffix not in {".c", ".h"} or not path.is_file():
             continue
         source = path.read_text()
-        if "strncpy_from_user_nofault" in source and "ksu_strncpy_from_user_nofault" not in source:
-            updated = source.replace("strncpy_from_user_nofault", "ksu_strncpy_from_user_nofault")
-            if updated != source:
-                path.write_text(updated)
-                replaced += 1
-    print(f"[sukisu] Replaced strncpy_from_user_nofault with 4.9 shim in {replaced} SukiSU source files")
+        updated = re.sub(r"(?<!ksu_)strncpy_from_user_nofault", "ksu_strncpy_from_user_nofault", source)
+        if updated != source:
+            path.write_text(updated)
+            replaced += 1
+    print(f"[sukisu] Replaced raw strncpy_from_user_nofault with 4.9 shim in {replaced} SukiSU source files")
 
 # Linux 4.9 does not have ksys_close(); it still exposes sys_close().
 util_header = kernel_dir / "include" / "util.h"
@@ -191,15 +191,15 @@ for rel in ("feature/sucompat.c", "hook/syscall_event_bridge.c"):
 print(f"[sukisu] Rewired legacy ARM64 syscall-table calls in {replaced_calls} SukiSU source files")
 
 # Linux 4.9 compatibility checks for the transformed tree.
-for needle in ("strncpy_from_user_nofault", "ksys_close"):
-    stale = []
-    for path in kernel_dir.rglob("*"):
-        if path.suffix not in {".c", ".h"} or not path.is_file():
-            continue
-        if needle in path.read_text():
-            stale.append(str(path))
-    if stale:
-        raise SystemExit(f"SukiSU compatibility transform left unsupported symbol {needle}: {stale}")
+import re
+raw_nofault = []
+for path in kernel_dir.rglob("*"):
+    if path.suffix not in {".c", ".h"} or not path.is_file():
+        continue
+    if re.search(r"(?<!ksu_)strncpy_from_user_nofault", path.read_text()):
+        raw_nofault.append(str(path))
+if raw_nofault:
+    raise SystemExit(f"SukiSU compatibility transform left raw strncpy_from_user_nofault: {raw_nofault}")
 
 if "ksu_call_original_syscall" not in syscall_hook_header.read_text():
     raise SystemExit("SukiSU ARM64 syscall compatibility helper was not installed")
