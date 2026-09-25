@@ -25,5 +25,8 @@ grep -Fq 'config KSU_MANUAL_SU' "$KSU_DIR/Kconfig" || die "SukiSU manual-su conf
 grep -Fq '#elif defined(__aarch64__)' "$KSU_DIR/hook/syscall_hook.h" || die "ARM64 syscall_fn_t compatibility missing"
 grep -Fq 'typedef void (*syscall_fn_t)(void);' "$KSU_DIR/hook/syscall_hook.h" || die "ARM64 syscall_fn_t typedef missing"
 grep -Fq '#ifdef MODULE_IMPORT_NS' "$KSU_DIR/core/init.c" || die "MODULE_IMPORT_NS 4.9 compatibility guard missing"
+if grep -RqsF '#include <linux/compiler_types.h>' "$KSU_DIR"; then
+  die "SukiSU still references linux/compiler_types.h after Linux 4.9 compatibility pass"
+fi
 
 ok "SukiSU-Ultra v4.2.0 source is pinned and integrated with Linux 4.9 compatibility"
