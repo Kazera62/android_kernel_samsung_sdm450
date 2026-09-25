@@ -9,6 +9,19 @@ on:
       - lineage-20
   workflow_dispatch:
     inputs:
+      kernel_name:
+        description: "Custom kernel name"
+        type: string
+        required: true
+        default: "Kazera M11/A11"
+      telegram:
+        description: "Send the build ZIP to Telegram"
+        type: choice
+        required: true
+        default: off
+        options:
+          - off
+          - on
       root_impl:
         description: "Root implementation"
         type: choice
@@ -132,6 +145,8 @@ permissions:
   contents: read
 
 env:
+  KERNEL_NAME_INPUT: ${{ inputs.kernel_name || 'Kazera M11/A11' }}
+  TELEGRAM_ENABLE: ${{ inputs.telegram || 'off' }}
   ROOT_IMPL: ${{ inputs.root_impl || 'none' }}
   KPM_ENABLE: ${{ inputs.kpm || 'off' }}
   SUSFS_ENABLE: ${{ inputs.susfs || 'off' }}
@@ -283,6 +298,12 @@ jobs:
           rm -rf out
 
           make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" a11q_open_defconfig
+
+          KERNEL_NAME_SLUG="$(printf '%s' "$KERNEL_NAME_INPUT" | LC_ALL=C sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
+          [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="Kazera-M11-A11"
+          scripts/config --file out/.config --set-str LOCALVERSION "-$KERNEL_NAME_SLUG"
+          scripts/config --file out/.config --disable LOCALVERSION_AUTO
+          printf 'KERNEL_NAME_SLUG=%s\n' "$KERNEL_NAME_SLUG" >> "$GITHUB_ENV"
 
           scripts/config --file out/.config --enable ARCH_ZQL1871
           scripts/config --file out/.config --enable ARCH_SDM450
@@ -539,6 +560,8 @@ jobs:
             echo "kernel_repo=https://github.com/Kazera62/android_kernel_samsung_sdm450"
             echo "kernel_branch=$GITHUB_REF_NAME"
             echo "kernel_commit=$GITHUB_SHA"
+            echo "kernel_name=$KERNEL_NAME_INPUT"
+            echo "kernel_name_slug=$KERNEL_NAME_SLUG"
             echo "root_impl=$ROOT_IMPL"
             echo "kpm=$KPM_ENABLE"
             echo "susfs=$SUSFS_ENABLE"
@@ -561,6 +584,17 @@ jobs:
 
           tar -C dist -czf "kazera-m11-kernel-$(git rev-parse --short=7 HEAD)-$ROOT_IMPL-$CLANG_VERSION.tar.gz" .
 
+          TELEGRAM_ZIP="$GITHUB_WORKSPACE/dist/${KERNEL_NAME_SLUG}-kernel-${GITHUB_RUN_NUMBER}.zip"
+          rm -f "$TELEGRAM_ZIP"
+          (
+            cd dist
+            zip -r9 "${KERNEL_NAME_SLUG}-kernel-${GITHUB_RUN_NUMBER}.zip" \
+              Image.gz System.map .config BUILD_INFO.txt kazera-build-env.txt SHA256SUMS dtb/samsung
+          )
+          test -s "$TELEGRAM_ZIP"
+          unzip -tq "$TELEGRAM_ZIP"
+          printf 'TELEGRAM_ZIP=%s\n' "$TELEGRAM_ZIP" >> "$GITHUB_ENV"
+
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -574,7 +608,50 @@ jobs:
             dist/BUILD_INFO.txt
             dist/SHA256SUMS
             dist/kazera-m11-kernel-*.tar.gz
+            dist/*.zip
             dist/dtb/samsung/*.dtb
             dist/dtb/samsung/*.dtbo
           if-no-files-found: error
           retention-days: 30
+      - name: Send build ZIP to Telegram
+        if: env.TELEGRAM_ENABLE == 'on'
+        shell: bash
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -euo pipefail
+
+          test -n "$TELEGRAM_BOT_TOKEN" || {
+            echo "TELEGRAM_BOT_TOKEN secret is missing." >&2
+            exit 1
+          }
+          test -n "$TELEGRAM_CHAT_ID" || {
+            echo "TELEGRAM_CHAT_ID secret is missing." >&2
+            exit 1
+          }
+          test -s "$TELEGRAM_ZIP"
+
+          FILE_SIZE="$(stat -c '%s' "$TELEGRAM_ZIP")"
+          MAX_TELEGRAM_BYTES=50000000
+          if [ "$FILE_SIZE" -gt "$MAX_TELEGRAM_BYTES" ]; then
+            echo "Telegram ZIP is $FILE_SIZE bytes, exceeding Telegram's 50 MB bot upload limit." >&2
+            exit 1
+          fi
+
+          CAPTION="${KERNEL_NAME_INPUT} | run #${GITHUB_RUN_NUMBER} | root=${ROOT_IMPL} | HZ=${HZ_CHOICE} | CPU=${CPU_GOV} | IO=${IO_SCHED} | TCP=${TCP_CONG}"
+
+          RESPONSE="$(
+            curl -fsS --retry 3 --retry-all-errors \
+              -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
+              -F "chat_id=${TELEGRAM_CHAT_ID}" \
+              -F "document=@${TELEGRAM_ZIP};type=application/zip" \
+              -F "caption=${CAPTION}"
+          )"
+
+          printf '%s\n' "$RESPONSE" |
+            grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
+              echo "Telegram API did not report success." >&2
+              printf '%s\n' "$RESPONSE" >&2
+              exit 1
+            }
