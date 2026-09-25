@@ -160,6 +160,8 @@ env:
   ZRAM_WB: ${{ inputs.zram_writeback || 'on' }}
   PSI_ENABLE: ${{ inputs.psi || 'off' }}
   CORTEX_TUNE: ${{ inputs.cortex_a53_tune || 'on' }}
+  ANYKERNEL3_REPO: https://github.com/Kazera62/AnyKernel3.git
+  ANYKERNEL3_REF: 05b253edc5d6575b71d0b5cab4251ec135422105
   ARCH: arm64
   SUBARCH: arm64
   CC: clang
@@ -585,13 +587,11 @@ jobs:
 
           tar -C dist -czf "kazera-m11-kernel-$(git rev-parse --short=7 HEAD)-$ROOT_IMPL-$CLANG_VERSION.tar.gz" .
 
-          AK3_REPO="https://github.com/Kazera62/AnyKernel3.git"
-          AK3_REF="05b253edc5d6575b71d0b5cab4251ec135422105"
           rm -rf .anykernel3
-          git clone --depth=1 "$AK3_REPO" .anykernel3
-          git -C .anykernel3 fetch --depth=1 origin "$AK3_REF"
-          git -C .anykernel3 checkout --detach "$AK3_REF"
-          test "$(git -C .anykernel3 rev-parse HEAD)" = "$AK3_REF"
+          git clone --depth=1 "$ANYKERNEL3_REPO" .anykernel3
+          git -C .anykernel3 fetch --depth=1 origin "$ANYKERNEL3_REF"
+          git -C .anykernel3 checkout --detach "$ANYKERNEL3_REF"
+          test "$(git -C .anykernel3 rev-parse HEAD)" = "$ANYKERNEL3_REF"
 
           test -s .anykernel3/anykernel.sh
           test -s .anykernel3/tools/ak3-core.sh
@@ -645,9 +645,9 @@ jobs:
             echo "psi=$PSI_ENABLE"
             echo "cortex_a53_tune=$CORTEX_TUNE"
             echo "base_config=a11q_open_defconfig"
-            echo "target=Samsung SM-M11 / SM-A11 (SDM450)"
-            echo "anykernel3_repo=$AK3_REPO"
-            echo "anykernel3_ref=$AK3_REF"
+            echo "target=Samsung Galaxy M11 / A11 (SDM450)"
+            echo "anykernel3_repo=$ANYKERNEL3_REPO"
+            echo "anykernel3_ref=$ANYKERNEL3_REF"
             echo "kernel_release=$(make -s O=out kernelrelease)"
           } > .anykernel3/KAZERA_BUILD_INFO.txt
 
@@ -664,6 +664,10 @@ jobs:
           unzip -l "$TELEGRAM_ZIP" | grep -q "anykernel.sh"
           unzip -l "$TELEGRAM_ZIP" | grep -q "META-INF/com/google/android/update-binary"
           unzip -l "$TELEGRAM_ZIP" | grep -q "tools/ak3-core.sh"
+          if unzip -l "$TELEGRAM_ZIP" | grep -Eq '(^|/)(README\.md|LICENSE)$|(^|/)\.github/|(^|/)\.git/'; then
+            echo "Unexpected repository-only files found in AnyKernel3 ZIP." >&2
+            exit 1
+          fi
           printf 'TELEGRAM_ZIP=%s\n' "$TELEGRAM_ZIP" >> "$GITHUB_ENV"
 
       - name: Upload kernel artifacts
