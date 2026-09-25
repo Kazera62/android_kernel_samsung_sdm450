@@ -414,7 +414,6 @@ jobs:
           if [ "$ROOT_IMPL" = "sukisu-ultra" ]; then
             scripts/config --file out/.config --enable KPROBES
             scripts/config --file out/.config --enable HAVE_KPROBES
-            scripts/config --file out/.config --enable KPROBE_EVENTS
             scripts/config --file out/.config --enable KSU
             scripts/config --file out/.config --enable KSU_MANUAL_SU
             scripts/config --file out/.config --disable KSU_DEBUG || true
@@ -423,7 +422,6 @@ jobs:
             scripts/config --file out/.config --disable KSU || true
             scripts/config --file out/.config --disable KPM || true
             scripts/config --file out/.config --disable KPROBES || true
-            scripts/config --file out/.config --disable KPROBE_EVENTS || true
           fi
 
           if [ "$CORTEX_TUNE" = "on" ]; then
@@ -435,7 +433,7 @@ jobs:
 
           make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" olddefconfig
 
-          grep -E "^(CONFIG_KSU=|CONFIG_KSU_MANUAL_SU=|CONFIG_KPROBES=|CONFIG_KPROBE_EVENTS=|CONFIG_HAVE_KPROBES=|CONFIG_KPM=|CONFIG_KALLSYMS_ALL=|CONFIG_HZ=|CONFIG_HZ_|CONFIG_CPU_FREQ_DEFAULT_GOV=|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_IOSCHED=|CONFIG_ZRAM_WRITEBACK=|CONFIG_PREEMPT|CONFIG_PSI=|CONFIG_LOCALVERSION=)" out/.config || true
+          grep -E "^(CONFIG_KSU=|CONFIG_KSU_MANUAL_SU=|CONFIG_KPROBES=|CONFIG_HAVE_KPROBES=|CONFIG_KPM=|CONFIG_KALLSYMS_ALL=|CONFIG_HZ=|CONFIG_HZ_|CONFIG_CPU_FREQ_DEFAULT_GOV=|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_IOSCHED=|CONFIG_ZRAM_WRITEBACK=|CONFIG_PREEMPT|CONFIG_PSI=|CONFIG_LOCALVERSION=)" out/.config || true
 
           case "$ROOT_IMPL" in
             none)
@@ -446,7 +444,6 @@ jobs:
               test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
               test "$(grep -c "^CONFIG_KSU_MANUAL_SU=y$" out/.config)" -eq 1
               test "$(grep -c "^CONFIG_KPROBES=y$" out/.config)" -eq 1
-              test "$(grep -c "^CONFIG_KPROBE_EVENTS=y$" out/.config)" -eq 1
               test "$(grep -c "^CONFIG_HAVE_KPROBES=y$" out/.config)" -eq 1
               test "$(grep -c "^CONFIG_KPM=y$" out/.config || true)" -eq 0
               ;;
