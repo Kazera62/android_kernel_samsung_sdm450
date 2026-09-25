@@ -476,8 +476,13 @@ jobs:
             echo "kernel_name=$KERNEL_NAME_INPUT"
             echo "kernel_name_slug=$KERNEL_NAME_SLUG"
             echo "root_impl=$ROOT_IMPL"
-            echo "sukisu_version=$SUKISU_VERSION"
-            echo "sukisu_ref=$SUKISU_REF"
+            if [ "$ROOT_IMPL" = "sukisu-ultra" ]; then
+              echo "sukisu_version=$SUKISU_VERSION"
+              echo "sukisu_ref=$SUKISU_REF"
+            else
+              echo "sukisu_version=n/a"
+              echo "sukisu_ref=n/a"
+            fi
             echo "clang=$CLANG_VERSION"
             echo "performance_profile=$PERF_PROFILE"
             echo "hz=$HZ_CHOICE"
@@ -623,7 +628,9 @@ jobs:
           fi
 
 
-          CAPTION="$(basename "$ZIP_PATH") | root=$ROOT_IMPL | SukiSU=$SUKISU_VERSION"
+          TELEGRAM_SUKISU_VERSION="n/a"
+          [ "$ROOT_IMPL" = "sukisu-ultra" ] && TELEGRAM_SUKISU_VERSION="$SUKISU_VERSION"
+          CAPTION="$(basename "$ZIP_PATH") | root=$ROOT_IMPL | SukiSU=$TELEGRAM_SUKISU_VERSION"
           RESPONSE="$(curl -fsS --retry 3 --retry-all-errors \
             -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
             -F "chat_id=$TELEGRAM_CHAT_ID" \
