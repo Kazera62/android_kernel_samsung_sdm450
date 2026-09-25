@@ -202,9 +202,20 @@ jobs:
         if: env.ROOT_IMPL == 'sukisu-ultra'
         shell: bash
         run: |
-          set -euxo pipefail
-          bash scripts/root/integrate_sukisu.sh "$GITHUB_WORKSPACE" "$SUKISU_REPO" "$SUKISU_REF"
-          bash scripts/root/verify_sukisu.sh "$GITHUB_WORKSPACE" "$SUKISU_REF"
+          set -Eeuo pipefail
+          trap 'status=$?; echo "::error file=scripts/root/integrate_sukisu.sh,line=${BASH_LINENO[0]}::SukiSU integration failed with status $status"; exit $status' ERR
+
+          test -x scripts/root/integrate_sukisu.sh
+          test -x scripts/root/verify_sukisu.sh
+
+          bash -x scripts/root/integrate_sukisu.sh \
+            "$GITHUB_WORKSPACE" \
+            "$SUKISU_REPO" \
+            "$SUKISU_REF"
+
+          bash -x scripts/root/verify_sukisu.sh \
+            "$GITHUB_WORKSPACE" \
+            "$SUKISU_REF"
 
       - name: Validate kernel feature support
         shell: bash
