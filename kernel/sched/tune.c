@@ -249,6 +249,8 @@ root_schedtune = {
 	.boost	= 10,
 #elif defined(CONFIG_KAZERA_SCHED_PROFILE_LATENCY)
 	.boost	= 20,
+#elif defined(CONFIG_KAZERA_SCHED_PROFILE_BALANCED)
+	.boost	= 5,
 #else
 	.boost	= 0,
 #endif
@@ -267,6 +269,10 @@ root_schedtune = {
 	.perf_boost_idx = 2,
 	.perf_constrain_idx = 2,
 	.prefer_idle = 1,
+#elif defined(CONFIG_KAZERA_SCHED_PROFILE_BALANCED)
+	.perf_boost_idx = 0,
+	.perf_constrain_idx = 0,
+	.prefer_idle = 0,
 #else
 	.perf_boost_idx = 0,
 	.perf_constrain_idx = 0,
