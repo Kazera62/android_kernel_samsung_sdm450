@@ -15,131 +15,25 @@ on:
         required: true
         default: "Kazera M11/A11"
       telegram:
-        description: "Send the build ZIP to Telegram"
+        description: "Send the finished AnyKernel3 ZIP to Telegram"
         type: choice
         required: true
         default: off
         options:
           - off
           - on
-      root_impl:
-        description: "Root implementation"
+      build_profile:
+        description: "Choose a simple build profile"
         type: choice
         required: true
-        default: none
+        default: performance
         options:
-          - none
+          - performance
+          - stock
           - kernelsu-next
-          - sukisu-ultra
-          - resukisu
-      kpm:
-        description: "SukiSU KPM (kernel 4.9 set_memory backport)"
-        type: choice
-        required: true
-        default: off
-        options:
-          - off
-          - on
-      susfs:
-        description: "ReSukiSU SUSFS for kernel 4.9"
-        type: choice
-        required: true
-        default: off
-        options:
-          - off
-          - on
-      susfs_log:
-        description: "SUSFS kernel logging"
-        type: choice
-        required: true
-        default: off
-        options:
-          - off
-          - on
-      clang:
-        description: "Android Clang toolchain"
-        type: choice
-        required: true
-        default: r383902b
-        options:
-          - r383902b
-          - r416183b
-          - r370808
-          - r365631c
-      performance_profile:
-        description: "Performance preset (HZ is configured separately)"
-        type: choice
-        required: true
-        default: performance
-        options:
-          - stock
-          - performance
-          - balanced
-          - latency
-      hz:
-        description: "Kernel timer frequency"
-        type: choice
-        required: true
-        default: 1000
-        options:
-          - 100
-          - 250
-          - 300
-          - 1000
-      cpu_governor:
-        description: "Default CPU frequency governor"
-        type: choice
-        required: true
-        default: performance
-        options:
-          - performance
-          - schedutil
-          - interactive
-          - ondemand
-          - stock
-      io_scheduler:
-        description: "Default block I/O scheduler"
-        type: choice
-        required: true
-        default: cfq
-        options:
-          - cfq
-          - noop
-          - deadline
-          - stock
-      tcp_congestion:
-        description: "Default TCP congestion control"
-        type: choice
-        required: true
-        default: bbr
-        options:
-          - bbr
-          - cubic
-          - stock
-      zram_writeback:
-        description: "zRAM writeback"
-        type: choice
-        required: true
-        default: on
-        options:
-          - on
-          - off
-      psi:
-        description: "Pressure Stall Information"
-        type: choice
-        required: true
-        default: off
-        options:
-          - on
-          - off
-      cortex_a53_tune:
-        description: "Tune kernel C code for Cortex-A53"
-        type: choice
-        required: true
-        default: on
-        options:
-          - on
-          - off
+          - sukisu-kpm
+          - resukisu-susfs
+          - resukisu-susfs-log
 
 permissions:
   contents: read
@@ -149,21 +43,22 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  BUILD_PROFILE: ${{ inputs.build_profile || 'performance' }}
   KERNEL_NAME_INPUT: ${{ inputs.kernel_name || 'Kazera M11/A11' }}
   TELEGRAM_ENABLE: ${{ inputs.telegram || 'off' }}
-  ROOT_IMPL: ${{ inputs.root_impl || 'none' }}
-  KPM_ENABLE: ${{ inputs.kpm || 'off' }}
-  SUSFS_ENABLE: ${{ inputs.susfs || 'off' }}
-  SUSFS_LOG: ${{ inputs.susfs_log || 'off' }}
-  CLANG_VERSION: ${{ inputs.clang || 'r383902b' }}
-  PERF_PROFILE: ${{ inputs.performance_profile || 'performance' }}
-  HZ_CHOICE: ${{ inputs.hz || '1000' }}
-  CPU_GOV: ${{ inputs.cpu_governor || 'performance' }}
-  IO_SCHED: ${{ inputs.io_scheduler || 'cfq' }}
-  TCP_CONG: ${{ inputs.tcp_congestion || 'bbr' }}
-  ZRAM_WB: ${{ inputs.zram_writeback || 'on' }}
-  PSI_ENABLE: ${{ inputs.psi || 'off' }}
-  CORTEX_TUNE: ${{ inputs.cortex_a53_tune || 'on' }}
+  ROOT_IMPL: ${{ fromJSON('{"stock":"none","performance":"none","kernelsu-next":"kernelsu-next","sukisu-kpm":"sukisu-ultra","resukisu-susfs":"resukisu","resukisu-susfs-log":"resukisu"}')[inputs.build_profile || 'performance'] }}
+  KPM_ENABLE: ${{ fromJSON('{"stock":"off","performance":"off","kernelsu-next":"off","sukisu-kpm":"on","resukisu-susfs":"off","resukisu-susfs-log":"off"}')[inputs.build_profile || 'performance'] }}
+  SUSFS_ENABLE: ${{ fromJSON('{"stock":"off","performance":"off","kernelsu-next":"off","sukisu-kpm":"off","resukisu-susfs":"on","resukisu-susfs-log":"on"}')[inputs.build_profile || 'performance'] }}
+  SUSFS_LOG: ${{ fromJSON('{"stock":"off","performance":"off","kernelsu-next":"off","sukisu-kpm":"off","resukisu-susfs":"off","resukisu-susfs-log":"on"}')[inputs.build_profile || 'performance'] }}
+  CLANG_VERSION: r383902b
+  PERF_PROFILE: ${{ fromJSON('{"stock":"stock","performance":"performance","kernelsu-next":"performance","sukisu-kpm":"performance","resukisu-susfs":"performance","resukisu-susfs-log":"performance"}')[inputs.build_profile || 'performance'] }}
+  HZ_CHOICE: ${{ fromJSON('{"stock":"stock","performance":"1000","kernelsu-next":"1000","sukisu-kpm":"1000","resukisu-susfs":"1000","resukisu-susfs-log":"1000"}')[inputs.build_profile || 'performance'] }}
+  CPU_GOV: ${{ fromJSON('{"stock":"stock","performance":"performance","kernelsu-next":"performance","sukisu-kpm":"performance","resukisu-susfs":"performance","resukisu-susfs-log":"performance"}')[inputs.build_profile || 'performance'] }}
+  IO_SCHED: ${{ fromJSON('{"stock":"stock","performance":"cfq","kernelsu-next":"cfq","sukisu-kpm":"cfq","resukisu-susfs":"cfq","resukisu-susfs-log":"cfq"}')[inputs.build_profile || 'performance'] }}
+  TCP_CONG: ${{ fromJSON('{"stock":"stock","performance":"bbr","kernelsu-next":"bbr","sukisu-kpm":"bbr","resukisu-susfs":"bbr","resukisu-susfs-log":"bbr"}')[inputs.build_profile || 'performance'] }}
+  ZRAM_WB: ${{ fromJSON('{"stock":"stock","performance":"on","kernelsu-next":"on","sukisu-kpm":"on","resukisu-susfs":"on","resukisu-susfs-log":"on"}')[inputs.build_profile || 'performance'] }}
+  PSI_ENABLE: ${{ fromJSON('{"stock":"stock","performance":"off","kernelsu-next":"off","sukisu-kpm":"off","resukisu-susfs":"off","resukisu-susfs-log":"off"}')[inputs.build_profile || 'performance'] }}
+  CORTEX_TUNE: ${{ fromJSON('{"stock":"off","performance":"on","kernelsu-next":"on","sukisu-kpm":"on","resukisu-susfs":"on","resukisu-susfs-log":"on"}')[inputs.build_profile || 'performance'] }}
   ANYKERNEL3_REPO: https://github.com/Kazera62/AnyKernel3.git
   ANYKERNEL3_REF: 0ab72a279369da34644860a256eba3f2e8142dad
   ARCH: arm64
@@ -402,6 +297,8 @@ jobs:
             1000)
               scripts/config --file out/.config --disable HZ_100 --disable HZ_250 --disable HZ_300 --enable HZ_1000
               ;;
+            stock)
+              ;;
             *)
               echo "Unsupported HZ: $HZ_CHOICE" >&2
               exit 1
@@ -479,15 +376,21 @@ jobs:
               ;;
           esac
 
-          scripts/config --file out/.config --enable ZRAM
-          if [ "$ZRAM_WB" = "on" ]; then
-            scripts/config --file out/.config --enable ZRAM_WRITEBACK --enable ZRAM_LRU_WRITEBACK
+          if [ "$ZRAM_WB" = "stock" ]; then
+            :
           else
-            scripts/config --file out/.config --disable ZRAM_WRITEBACK --disable ZRAM_LRU_WRITEBACK
+            scripts/config --file out/.config --enable ZRAM
+            if [ "$ZRAM_WB" = "on" ]; then
+              scripts/config --file out/.config --enable ZRAM_WRITEBACK --enable ZRAM_LRU_WRITEBACK
+            else
+              scripts/config --file out/.config --disable ZRAM_WRITEBACK --disable ZRAM_LRU_WRITEBACK
+            fi
           fi
 
           if [ "$PSI_ENABLE" = "on" ]; then
             scripts/config --file out/.config --enable PSI
+          elif [ "$PSI_ENABLE" = "stock" ]; then
+            :
           else
             scripts/config --file out/.config --disable PSI
           fi
@@ -597,6 +500,7 @@ jobs:
           bash -n .anykernel3/anykernel.sh
 
           {
+            echo "build_profile=$BUILD_PROFILE"
             echo "kernel_name=$KERNEL_NAME_INPUT"
             echo "kernel_name_slug=$KERNEL_NAME_SLUG"
             echo "root_impl=$ROOT_IMPL"
