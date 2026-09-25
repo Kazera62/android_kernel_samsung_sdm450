@@ -414,7 +414,7 @@ jobs:
           if [ "$ROOT_IMPL" = "sukisu-ultra" ]; then
             scripts/config --file out/.config --enable KPROBES
             scripts/config --file out/.config --enable HAVE_KPROBES
-            scripts/config --enable KPROBE_EVENTS --file out/.config
+            scripts/config --file out/.config --enable KPROBE_EVENTS
             scripts/config --file out/.config --enable KSU
             scripts/config --file out/.config --enable KSU_MANUAL_SU
             scripts/config --file out/.config --disable KSU_DEBUG || true
