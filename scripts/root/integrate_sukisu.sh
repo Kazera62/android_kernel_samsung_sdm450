@@ -43,18 +43,20 @@ test -f "$KSU_DIR/kernel/Kbuild" || die "SukiSU kernel/Kbuild missing"
 # Keep the upstream source pinned, but apply only mechanical 4.9 compatibility
 # transforms in this integration layer.
 
-python3 - "$KSU_DIR/kernel/feature/sulog.c" "$KSU_DIR/kernel/hook/syscall_hook.h" "$KSU_DIR/kernel/core/init.c" <<'PY'
+python3 - "$KSU_DIR/kernel/feature/sulog.c" "$KSU_DIR/kernel/sulog/event.h" "$KSU_DIR/kernel/hook/syscall_hook.h" "$KSU_DIR/kernel/core/init.c" <<'PY'
 from pathlib import Path
 import sys
 
 sulog = Path(sys.argv[1])
-hook = Path(sys.argv[2])
-init = Path(sys.argv[3])
+event_h = Path(sys.argv[2])
+hook = Path(sys.argv[3])
+init = Path(sys.argv[4])
 
 # Linux 4.9 has linux/compiler.h but not linux/compiler_types.h.
-text = sulog.read_text()
-text = text.replace("#include <linux/compiler_types.h>\n", "", 1)
-sulog.write_text(text)
+for path in (sulog, event_h):
+    text = path.read_text()
+    text = text.replace("#include <linux/compiler_types.h>\n", "", 1)
+    path.write_text(text)
 
 # SukiSU v4.2.0 uses syscall_fn_t on ARM64, but the 4.9 arm64 headers expose
 # sys_call_table as void * and do not provide the newer sys_call_ptr_t alias.
