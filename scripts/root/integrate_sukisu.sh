@@ -36,8 +36,8 @@ test "$actual_ref" = "$SUKISU_REF" ||
 
 test -f "$KSU_DIR/kernel/Kconfig" || die "SukiSU kernel/Kconfig missing"
 test -f "$KSU_DIR/kernel/Makefile" || die "SukiSU kernel/Makefile missing"
-test -f "$KSU_DIR/kernel/ksu.c" || die "SukiSU kernel/ksu.c missing"
 test -f "$KSU_DIR/kernel/core/init.c" || die "SukiSU kernel/core/init.c missing"
+test -f "$KSU_DIR/kernel/Kbuild" || die "SukiSU kernel/Kbuild missing"
 
 log "Removing previous drivers/kernelsu integration if present"
 rm -rf "$DRIVER_DIR/kernelsu"
@@ -56,7 +56,6 @@ log "Verifying integrated source"
 test "$(git -C "$KSU_DIR" rev-parse HEAD)" = "$SUKISU_REF"
 test -f "$KSU_DIR/kernel/Kconfig"
 test -f "$KSU_DIR/kernel/Makefile"
-test -f "$KSU_DIR/kernel/ksu.c"
 
 if ! grep -Fq 'config KSU' "$KSU_DIR/kernel/Kconfig"; then
   die "SukiSU KSU config entry missing"
