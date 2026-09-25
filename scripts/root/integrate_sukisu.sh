@@ -136,6 +136,44 @@ static inline long ksu_strncpy_from_user_nofault(char *dst,
             include_added += 1
     print(f"[sukisu] Added kernel_compat.h include to {include_added} SukiSU C sources")
 
+# Linux 4.9 does not have copy_{to,from}_user_nofault(). Use the
+# regular user-copy helpers in the compatibility layer and its consumers.
+compat_text = compat_header.read_text()
+old_body = '''static long ksu_copy_from_user_retry(void *to, const void __user *from,
+                                     unsigned long count)
+{
+    long ret = copy_from_user_nofault(to, from, count);
+    if (likely(!ret))
+        return ret;
+
+    // we faulted! fallback to slow path
+    return copy_from_user(to, from, count);
+}
+'''
+new_body = '''static long ksu_copy_from_user_retry(void *to, const void __user *from,
+                                     unsigned long count)
+{
+    return copy_from_user(to, from, count);
+}
+'''
+if old_body in compat_text:
+    compat_header.write_text(compat_text.replace(old_body, new_body, 1))
+    print("[sukisu] Replaced copy_from_user_nofault fallback with Linux 4.9-compatible copy_from_user")
+else:
+    print("[sukisu] copy_from_user retry helper already transformed or source variant differs")
+
+replaced_usercopy_nofault = 0
+for path in kernel_dir.rglob("*"):
+    if path.suffix not in {".c", ".h"} or not path.is_file():
+        continue
+    source = path.read_text()
+    updated = source.replace("copy_from_user_nofault", "copy_from_user")
+    updated = updated.replace("copy_to_user_nofault", "copy_to_user")
+    if updated != source:
+        path.write_text(updated)
+        replaced_usercopy_nofault += 1
+print(f"[sukisu] Replaced raw user-copy nofault APIs in {replaced_usercopy_nofault} SukiSU source files")
+
 # Linux 4.9 does not have ksys_close(); it still exposes sys_close().
 util_header = kernel_dir / "include" / "util.h"
 if util_header.is_file():
