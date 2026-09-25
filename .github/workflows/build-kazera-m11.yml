@@ -548,48 +548,12 @@ jobs:
           test -d out/arch/arm64/boot/dts/samsung
           test -n "$(find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print -quit)"
           find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print | sort
-      - name: Package artifacts
+      - name: Package AnyKernel3
         shell: bash
         run: |
           set -euxo pipefail
           rm -rf dist
-          mkdir -p dist/dtb/samsung
-
-          cp out/arch/arm64/boot/Image.gz dist/Image.gz
-          cp out/vmlinux dist/vmlinux
-          cp out/System.map dist/System.map
-          cp out/.config dist/.config
-          cp out/kazera-build-env.txt dist/kazera-build-env.txt
-
-          find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -exec cp {} dist/dtb/samsung/ \;
-
-          {
-            echo "kernel_repo=https://github.com/Kazera62/android_kernel_samsung_sdm450"
-            echo "kernel_branch=$GITHUB_REF_NAME"
-            echo "kernel_commit=$GITHUB_SHA"
-            echo "kernel_name=$KERNEL_NAME_INPUT"
-            echo "kernel_name_slug=$KERNEL_NAME_SLUG"
-            echo "root_impl=$ROOT_IMPL"
-            echo "kpm=$KPM_ENABLE"
-            echo "susfs=$SUSFS_ENABLE"
-            echo "susfs_log=$SUSFS_LOG"
-            echo "clang=$CLANG_VERSION"
-            echo "performance_profile=$PERF_PROFILE"
-            echo "hz=$HZ_CHOICE"
-            echo "cpu_governor=$CPU_GOV"
-            echo "io_scheduler=$IO_SCHED"
-            echo "tcp_congestion=$TCP_CONG"
-            echo "zram_writeback=$ZRAM_WB"
-            echo "psi=$PSI_ENABLE"
-            echo "cortex_a53_tune=$CORTEX_TUNE"
-            echo "base_config=a11q_open_defconfig"
-            echo "target=Samsung Galaxy M11 / A11 (SDM450)"
-            echo "kernel_release=$(make -s O=out kernelrelease)"
-          } > dist/BUILD_INFO.txt
-
-          (cd dist && sha256sum Image.gz vmlinux System.map .config BUILD_INFO.txt kazera-build-env.txt dtb/samsung/* 2>/dev/null || true) > dist/SHA256SUMS
-
-          tar -C dist -czf "kazera-m11-kernel-$(git rev-parse --short=7 HEAD)-$ROOT_IMPL-$CLANG_VERSION.tar.gz" .
+          mkdir -p dist
 
           rm -rf .anykernel3
           git clone --depth=1 "$ANYKERNEL3_REPO" .anykernel3
@@ -683,22 +647,11 @@ jobs:
           fi
           printf 'TELEGRAM_ZIP=%s\n' "$TELEGRAM_ZIP" >> "$GITHUB_ENV"
 
-      - name: Upload kernel artifacts
+      - name: Upload AnyKernel3 artifact
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: kazera-m11-kernel-${{ github.run_number }}
-          path: |
-            dist/Image.gz
-            dist/vmlinux
-            dist/System.map
-            dist/.config
-            dist/kazera-build-env.txt
-            dist/BUILD_INFO.txt
-            dist/SHA256SUMS
-            dist/kazera-m11-kernel-*.tar.gz
-            dist/*-AnyKernel3-*.zip
-            dist/dtb/samsung/*.dtb
-            dist/dtb/samsung/*.dtbo
+          name: kazera-m11-anykernel3-${{ github.run_number }}
+          path: dist/*-AnyKernel3-*.zip
           if-no-files-found: error
           retention-days: 30
       - name: Send build ZIP to Telegram
