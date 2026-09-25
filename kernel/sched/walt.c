@@ -175,6 +175,8 @@ __read_mostly unsigned int sysctl_sched_window_stats_policy = WINDOW_STATS_MAX_R
 __read_mostly unsigned int sched_ravg_window = 40000000;
 #elif defined(CONFIG_KAZERA_SCHED_PROFILE_LATENCY)
 __read_mostly unsigned int sched_ravg_window = 20000000;
+#elif defined(CONFIG_KAZERA_SCHED_PROFILE_BALANCED)
+__read_mostly unsigned int sched_ravg_window = 24000000;
 #else
 __read_mostly unsigned int sched_ravg_window = MIN_SCHED_RAVG_WINDOW;
 #endif
