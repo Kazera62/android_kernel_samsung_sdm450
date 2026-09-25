@@ -205,8 +205,8 @@ jobs:
           set -Eeuo pipefail
           trap 'status=$?; echo "::error file=scripts/root/integrate_sukisu.sh,line=${BASH_LINENO[0]}::SukiSU integration failed with status $status"; exit $status' ERR
 
-          test -x scripts/root/integrate_sukisu.sh
-          test -x scripts/root/verify_sukisu.sh
+          test -f scripts/root/integrate_sukisu.sh
+          test -f scripts/root/verify_sukisu.sh
 
           bash -x scripts/root/integrate_sukisu.sh \
             "$GITHUB_WORKSPACE" \
