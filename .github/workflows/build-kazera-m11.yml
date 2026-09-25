@@ -10,12 +10,12 @@ on:
   workflow_dispatch:
     inputs:
       kernel_name:
-        description: "Nama kernel pada perangkat dan file ZIP."
+        description: "Nama kernel pada perangkat dan file ZIP; tidak memengaruhi kode kernel."
         type: string
         required: true
         default: "Kazera M11/A11"
       telegram:
-        description: "Kirim ZIP AnyKernel3 hasil build ke Telegram."
+        description: "Kirim ZIP AnyKernel3 hasil build; tidak memengaruhi kode kernel."
         type: choice
         required: true
         default: off
@@ -23,7 +23,7 @@ on:
           - off
           - on
       root_impl:
-        description: "Pilih implementasi root kernel."
+        description: "Integrasi root eksternal yang ditambahkan saat build; none = source dasar."
         type: choice
         required: true
         default: none
@@ -33,7 +33,7 @@ on:
           - sukisu-ultra
           - resukisu
       kpm:
-        description: "Aktifkan KPM untuk SukiSU-Ultra pada kernel 4.9."
+        description: "Tambahkan KPM eksternal untuk SukiSU-Ultra; bukan fitur native source."
         type: choice
         required: true
         default: off
@@ -41,7 +41,7 @@ on:
           - off
           - on
       susfs:
-        description: "Aktifkan SUSFS untuk ReSukiSU pada kernel 4.9."
+        description: "Tambahkan patch SUSFS eksternal untuk ReSukiSU; bukan fitur native source."
         type: choice
         required: true
         default: off
@@ -49,7 +49,7 @@ on:
           - off
           - on
       clang:
-        description: "Pilih Android Clang toolchain untuk kompilasi kernel."
+        description: "Pilih compiler Android untuk proses build; bukan fitur runtime kernel."
         type: choice
         required: true
         default: r383902b
@@ -59,7 +59,7 @@ on:
           - r370808
           - r365631c
       performance_profile:
-        description: "Pilih preset performa dan preemption kernel."
+        description: "Mengatur opsi performa/preemption yang tersedia di source kernel."
         type: choice
         required: true
         default: performance
@@ -69,7 +69,7 @@ on:
           - balanced
           - latency
       hz:
-        description: "Atur frekuensi timer kernel."
+        description: "Mengatur CONFIG_HZ; seluruh pilihan tersedia di source kernel."
         type: choice
         required: true
         default: 1000
@@ -79,7 +79,7 @@ on:
           - 300
           - 1000
       cpu_governor:
-        description: "Pilih CPU frequency governor default."
+        description: "Mengatur governor CPU default yang tersedia di source kernel."
         type: choice
         required: true
         default: performance
@@ -90,7 +90,7 @@ on:
           - ondemand
           - stock
       io_scheduler:
-        description: "Pilih block I/O scheduler default."
+        description: "Mengatur I/O scheduler default yang tersedia di source kernel."
         type: choice
         required: true
         default: cfq
@@ -100,7 +100,7 @@ on:
           - deadline
           - stock
       tcp_congestion:
-        description: "Pilih TCP congestion control default."
+        description: "Mengatur TCP congestion control default yang tersedia di source kernel."
         type: choice
         required: true
         default: bbr
@@ -109,7 +109,7 @@ on:
           - cubic
           - stock
       zram_writeback:
-        description: "Aktifkan zRAM writeback ke storage."
+        description: "Mengaktifkan ZRAM writeback yang tersedia di source kernel."
         type: choice
         required: true
         default: on
@@ -117,7 +117,7 @@ on:
           - on
           - off
       cortex_a53_tune:
-        description: "Aktifkan compiler tuning untuk Cortex-A53."
+        description: "Menambahkan -mcpu=cortex-a53+crypto saat kompilasi; bukan CONFIG kernel."
         type: choice
         required: true
         default: on
@@ -136,6 +136,7 @@ env:
   KERNEL_NAME_INPUT: ${{ inputs.kernel_name || 'Kazera M11/A11' }}
   TELEGRAM_ENABLE: ${{ inputs.telegram || 'off' }}
   ROOT_IMPL: ${{ inputs.root_impl || 'none' }}
+  ROOT_INTEGRATION_REF: ${{ inputs.root_impl == 'kernelsu-next' && '194a4d0531bba5810a7d0a1014acbbf34d9ae284' || inputs.root_impl == 'sukisu-ultra' && 'b20dee702035af09cb2ecb5f35443bbc1747f3e6' || inputs.root_impl == 'resukisu' && '6803643e19e2e6e8287f96461aabb93bdd6c47fa' || 'none' }}
   KPM_ENABLE: ${{ inputs.kpm || 'off' }}
   SUSFS_ENABLE: ${{ inputs.susfs || 'off' }}
   CLANG_VERSION: ${{ inputs.clang || 'r383902b' }}
@@ -238,13 +239,13 @@ jobs:
           set -euxo pipefail
           case "$ROOT_IMPL" in
             kernelsu-next)
-              curl -fLSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s legacy
+              curl -fLSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s 194a4d0531bba5810a7d0a1014acbbf34d9ae284
               ;;
             sukisu-ultra)
-              curl -fLSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/builtin/kernel/setup.sh" | bash -s builtin
+              curl -fLSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/builtin/kernel/setup.sh" | bash -s b20dee702035af09cb2ecb5f35443bbc1747f3e6
               ;;
             resukisu)
-              curl -fLSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s main
+              curl -fLSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s 6803643e19e2e6e8287f96461aabb93bdd6c47fa
               ;;
             *)
               echo "Unsupported root implementation: $ROOT_IMPL" >&2
@@ -574,6 +575,7 @@ jobs:
             echo "kernel_name=$KERNEL_NAME_INPUT"
             echo "kernel_name_slug=$KERNEL_NAME_SLUG"
             echo "root_impl=$ROOT_IMPL"
+            echo "root_integration_ref=$ROOT_INTEGRATION_REF"
             echo "kpm=$KPM_ENABLE"
             echo "susfs=$SUSFS_ENABLE"
             echo "clang=$CLANG_VERSION"
