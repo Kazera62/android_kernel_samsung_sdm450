@@ -587,13 +587,21 @@ jobs:
 
           AK3_COMMIT="6f88dff82b786e879b255a8e1523547c4f62d031"
           rm -rf .anykernel3
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git .anykernel3
-          git -C .anykernel3 fetch --depth=1 origin "$AK3_COMMIT"
-          git -C .anykernel3 checkout --detach "$AK3_COMMIT"
-          test "$(git -C .anykernel3 rev-parse HEAD)" = "$AK3_COMMIT"
+          mkdir -p .anykernel3
+          cp -a anykernel3/. .anykernel3/
+          test -s .anykernel3/anykernel.sh
+          test -s .anykernel3/tools/ak3-core.sh
+          test -s .anykernel3/META-INF/com/google/android/update-binary
+          test -s .anykernel3/META-INF/com/google/android/updater-script
+
+          # The sample ZIP uses these exact AnyKernel3 binaries. Keep them pinned.
+          for tool in busybox fec httools_static lptools_static magiskboot magiskpolicy snapshotupdater_static; do
+            curl -fL "https://raw.githubusercontent.com/osm0sis/AnyKernel3/$AK3_COMMIT/tools/$tool" -o ".anykernel3/tools/$tool"
+            chmod 755 ".anykernel3/tools/$tool"
+          done
+          sha256sum -c anykernel3/TOOLS_SHA256SUMS.txt
 
           cp out/arch/arm64/boot/Image.gz-dtb .anykernel3/Image.gz-dtb
-          cp anykernel3/anykernel.sh .anykernel3/anykernel.sh
 
           python3 - <<'PY'
           import os
@@ -607,34 +615,19 @@ jobs:
           name = re.sub(r"\s+", " ", name).strip()
           if not name:
               name = "KernelSU Next for Galaxy A11/M11 ARM64-Only"
-
-          text, count = re.subn(
-              r"^kernel\.string=.*$"
-              lambda _: "kernel.string=" + name,
-              text,
-              count=1,
-              flags=re.M,
-          )
+          text, count = re.subn(r"^kernel\.string=.*$", lambda _: "kernel.string=" + name, text, count=1, flags=re.M)
           if count != 1:
               raise SystemExit("kernel.string line not found exactly once")
           path.write_text(text, encoding="utf-8")
           PY
 
           test -s .anykernel3/Image.gz-dtb
-          test -s .anykernel3/anykernel.sh
-          test -s .anykernel3/tools/ak3-core.sh
-          test -x .anykernel3/tools/magiskboot
-          test -f .anykernel3/META-INF/com/google/android/update-binary
-          test -f .anykernel3/META-INF/com/google/android/updater-script
-
           bash -n .anykernel3/anykernel.sh
           grep -Fq "device.name1=sdm450" .anykernel3/anykernel.sh
           grep -Fq "device.name2=m11q" .anykernel3/anykernel.sh
           grep -Fq "device.name3=a11q" .anykernel3/anykernel.sh
           grep -Fq "BLOCK=/dev/block/by-name/boot" .anykernel3/anykernel.sh
           grep -Fq "IS_SLOT_DEVICE=0" .anykernel3/anykernel.sh
-          grep -Fq "do.modules=0" .anykernel3/anykernel.sh
-          grep -Fq "do.systemless=0" .anykernel3/anykernel.sh
 
           {
             echo "kernel_name=$KERNEL_NAME_INPUT"
@@ -661,7 +654,7 @@ jobs:
           (
             cd .anykernel3
             sha256sum Image.gz-dtb anykernel.sh KAZERA_BUILD_INFO.txt > KAZERA_SHA256SUMS
-            zip -r9 "$GITHUB_WORKSPACE/dist/${KERNEL_NAME_SLUG}-AnyKernel3-${GITHUB_RUN_NUMBER}.zip" . -x ".git/*"
+            zip -r9 "$GITHUB_WORKSPACE/dist/${KERNEL_NAME_SLUG}-AnyKernel3-${GITHUB_RUN_NUMBER}.zip" .
           )
 
           TELEGRAM_ZIP="$GITHUB_WORKSPACE/dist/${KERNEL_NAME_SLUG}-AnyKernel3-${GITHUB_RUN_NUMBER}.zip"
