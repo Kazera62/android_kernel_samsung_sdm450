@@ -38,6 +38,17 @@ PY
 grep -Fq '#define ksu_close_fd sys_close' "$KSU_DIR/include/util.h" || die "Linux 4.9 sys_close compatibility shim missing"
 python3 - "$KSU_DIR" <<'PY'
 from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+for path in root.rglob("*"):
+    if path.suffix not in {".c", ".h"} or not path.is_file():
+        continue
+    text = path.read_text()
+    if "copy_from_user_nofault" in text or "copy_to_user_nofault" in text:
+        raise SystemExit(f"raw user-copy nofault API remains: {path}")
+PY
+python3 - "$KSU_DIR" <<'PY'
+from pathlib import Path
 import re
 import sys
 root = Path(sys.argv[1])
