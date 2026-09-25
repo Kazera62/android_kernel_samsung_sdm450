@@ -1453,6 +1453,21 @@ config SCHED_TUNE
 
 	  If unsure, say N.
 
+config KAZERA_SCHED_PROFILE_PERFORMANCE
+	bool "Kazera performance scheduler profile"
+	default n
+	depends on SMP
+
+config KAZERA_SCHED_PROFILE_BALANCED
+	bool "Kazera balanced scheduler profile"
+	default n
+	depends on SMP
+
+config KAZERA_SCHED_PROFILE_LATENCY
+	bool "Kazera latency scheduler profile"
+	default n
+	depends on SMP
+
 config DEFAULT_USE_ENERGY_AWARE
 	bool "Default to enabling the Energy Aware Scheduler feature"
 	default n
