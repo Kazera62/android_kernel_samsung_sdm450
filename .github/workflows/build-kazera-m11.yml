@@ -150,7 +150,7 @@ env:
   ANYKERNEL3_REPO: https://github.com/Kazera62/AnyKernel3.git
   ANYKERNEL3_REF: 0ab72a279369da34644860a256eba3f2e8142dad
   KERNEL_FIXES_REPO: https://github.com/Kazera62/kernel_fixes.git
-  KERNEL_FIXES_REF: c7c10b1c30d0a9f3238c841bc9210b208ca47b13
+  KERNEL_FIXES_REF: 10ca24f1d638c9d79ca61f27818734278566df06
   ARCH: arm64
   SUBARCH: arm64
   CC: clang
@@ -385,7 +385,7 @@ jobs:
               scripts/config --file out/.config --enable KSU_MANUAL_HOOK
               ;;
             sukisu-ultra)
-              scripts/config --file out/.config --enable KPROBES
+              scripts/config --file out/.config --disable KPROBES
               scripts/config --file out/.config --enable EXT4_FS
               scripts/config --file out/.config --enable KSU
               if [ "$KPM_ENABLE" = "on" ]; then
@@ -581,6 +581,7 @@ jobs:
               test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
               test "$(grep -c "^CONFIG_KPM=y$" out/.config)" -eq 0
               test "$(grep -c "^CONFIG_KSU_SUSFS=y$" out/.config)" -eq 0
+              test "$(grep -c "^CONFIG_KPROBES=y$" out/.config)" -eq 0
               ;;
             resukisu:on:off)
               echo "Invalid configuration: KPM requires SukiSU Ultra and cannot be combined with ReSukiSU." >&2
