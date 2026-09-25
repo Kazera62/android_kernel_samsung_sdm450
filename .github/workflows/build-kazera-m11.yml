@@ -239,13 +239,13 @@ jobs:
           set -euxo pipefail
           case "$ROOT_IMPL" in
             kernelsu-next)
-              curl -fLSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s 194a4d0531bba5810a7d0a1014acbbf34d9ae284
+              curl -fLSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/194a4d0531bba5810a7a0d1014acbbf34d9ae284/kernel/setup.sh" | bash -s 194a4d0531bba5810a7d0a1014acbbf34d9ae284
               ;;
             sukisu-ultra)
-              curl -fLSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/builtin/kernel/setup.sh" | bash -s b20dee702035af09cb2ecb5f35443bbc1747f3e6
+              curl -fLSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/b20dee702035af09cb2ecb5f35443bbc1747f3e6/kernel/setup.sh" | bash -s b20dee702035af09cb2ecb5f35443bbc1747f3e6
               ;;
             resukisu)
-              curl -fLSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s 6803643e19e2e6e8287f96461aabb93bdd6c47fa
+              curl -fLSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/6803643e19e2e6e8287f96461aabb93bdd6c47fa/kernel/setup.sh" | bash -s 6803643e19e2e6e8287f96461aabb93bdd6c47fa
               ;;
             *)
               echo "Unsupported root implementation: $ROOT_IMPL" >&2
