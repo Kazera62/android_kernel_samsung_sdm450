@@ -24,6 +24,12 @@ grep -Fq 'depends on KPROBES && EXT4_FS' "$KSU_DIR/Kconfig" || die "this SukiSU 
 grep -Fq 'config KSU_MANUAL_SU' "$KSU_DIR/Kconfig" || die "SukiSU manual-su config missing"
 grep -Fq '#elif defined(__aarch64__)' "$KSU_DIR/hook/syscall_hook.h" || die "ARM64 syscall_fn_t compatibility missing"
 grep -Fq 'typedef void (*syscall_fn_t)(void);' "$KSU_DIR/hook/syscall_hook.h" || die "ARM64 syscall_fn_t typedef missing"
+grep -Fq 'ksu_call_original_syscall' "$KSU_DIR/hook/syscall_hook.h" || die "Linux 4.9 syscall ABI shim missing"
+grep -Fq 'ksu_strncpy_from_user_nofault' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 strncpy compatibility shim missing"
+grep -Fq '#define ksu_close_fd sys_close' "$KSU_DIR/include/util.h" || die "Linux 4.9 sys_close compatibility shim missing"
+if grep -RqsF 'strncpy_from_user_nofault' "$KSU_DIR"; then
+  die "SukiSU still references raw strncpy_from_user_nofault"
+fi
 grep -Fq '#ifdef MODULE_IMPORT_NS' "$KSU_DIR/core/init.c" || die "MODULE_IMPORT_NS 4.9 compatibility guard missing"
 if grep -RqsF '#include <linux/pgtable.h>' "$KSU_DIR"; then
   die "SukiSU still references linux/pgtable.h after Linux 4.9 compatibility pass"
