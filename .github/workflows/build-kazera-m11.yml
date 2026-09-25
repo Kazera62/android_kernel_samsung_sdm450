@@ -622,14 +622,14 @@ jobs:
           test -d out/arch/arm64/boot/dts/samsung
           test -n "$(find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print -quit)"
           find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print | sort
-      - name: Prepare kernel artifact
+      - name: Prepare AnyKernel3 package input
         shell: bash
         run: |
           set -euxo pipefail
-          rm -rf build-artifact
-          mkdir -p build-artifact
+          rm -rf package-input dist .anykernel3
+          mkdir -p package-input dist
 
-          cp out/arch/arm64/boot/Image.gz-dtb build-artifact/Image.gz-dtb
+          cp out/arch/arm64/boot/Image.gz-dtb package-input/Image.gz-dtb
 
           {
             echo "kernel_name=$KERNEL_NAME_INPUT"
@@ -652,50 +652,21 @@ jobs:
             echo "anykernel3_ref=$ANYKERNEL3_REF"
             echo "kernel_release=$(make -s O=out kernelrelease)"
             echo "git_commit=$GITHUB_SHA"
-          } > build-artifact/KAZERA_BUILD_INFO.txt
+          } > package-input/KAZERA_BUILD_INFO.txt
 
-          test -s build-artifact/Image.gz-dtb
-          test -s build-artifact/KAZERA_BUILD_INFO.txt
-
-      - name: Upload kernel artifact
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: kazera-m11-build-${{ github.run_number }}
-          path: build-artifact/*
-          if-no-files-found: error
-          retention-days: 1
-
-  package-anykernel3:
-    name: "Package AnyKernel3"
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    needs: build-kernel
-
-    steps:
-      - name: Download kernel artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: kazera-m11-build-${{ github.run_number }}
-          path: build-artifact
-
-      - name: Install packaging dependencies
-        shell: bash
-        run: |
-          set -euxo pipefail
-          sudo apt-get update
-          sudo apt-get install -y zip unzip git
+          test -s package-input/Image.gz-dtb
+          test -s package-input/KAZERA_BUILD_INFO.txt
 
       - name: Package AnyKernel3
         shell: bash
         run: |
           set -euxo pipefail
-          rm -rf dist .anykernel3
-          mkdir -p dist
 
-          test -s build-artifact/Image.gz-dtb
-          test -s build-artifact/KAZERA_BUILD_INFO.txt
-          KERNEL_NAME_INPUT="$(sed -n 's/^kernel_name=//p' build-artifact/KAZERA_BUILD_INFO.txt)"
-          KERNEL_NAME_SLUG="$(sed -n 's/^kernel_name_slug=//p' build-artifact/KAZERA_BUILD_INFO.txt)"
+          test -s package-input/Image.gz-dtb
+          test -s package-input/KAZERA_BUILD_INFO.txt
+
+          KERNEL_NAME_INPUT="$(sed -n 's/^kernel_name=//p' package-input/KAZERA_BUILD_INFO.txt)"
+          KERNEL_NAME_SLUG="$(sed -n 's/^kernel_name_slug=//p' package-input/KAZERA_BUILD_INFO.txt)"
           [ -n "$KERNEL_NAME_INPUT" ] || KERNEL_NAME_INPUT="Kazera M11/A11"
           [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="Kazera-M11-A11"
 
@@ -717,8 +688,8 @@ jobs:
           grep -Fq "do.systemless=0" .anykernel3/anykernel.sh
           bash -n .anykernel3/anykernel.sh
 
-          cp build-artifact/Image.gz-dtb .anykernel3/Image.gz-dtb
-          cp build-artifact/KAZERA_BUILD_INFO.txt .anykernel3/KAZERA_BUILD_INFO.txt
+          cp package-input/Image.gz-dtb .anykernel3/Image.gz-dtb
+          cp package-input/KAZERA_BUILD_INFO.txt .anykernel3/KAZERA_BUILD_INFO.txt
 
           python3 - <<'PY'
           import pathlib
@@ -767,10 +738,12 @@ jobs:
             exit 1
           fi
 
-      - name: Upload AnyKernel3 artifact
+          test "$(find dist -maxdepth 1 -type f -name '*-AnyKernel3-*.zip' | wc -l)" -eq 1
+
+      - name: Upload final AnyKernel3 ZIP
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: kazera-m11-anykernel3-${{ github.run_number }}
+          name: kazera-m11-anykernel3-\${{ github.run_number }}
           path: dist/*-AnyKernel3-*.zip
           if-no-files-found: error
           retention-days: 30
@@ -779,8 +752,8 @@ jobs:
     name: "Send ZIP to Telegram"
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    needs: package-anykernel3
-    if: needs.package-anykernel3.result == 'success' && inputs.telegram == 'on'
+    needs: build-kernel
+    if: needs.build-kernel.result == 'success' && inputs.telegram == 'on'
 
     steps:
       - name: Download AnyKernel3 artifact
