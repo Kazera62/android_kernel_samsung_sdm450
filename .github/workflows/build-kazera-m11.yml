@@ -150,7 +150,7 @@ env:
   ANYKERNEL3_REPO: https://github.com/Kazera62/AnyKernel3.git
   ANYKERNEL3_REF: 0ab72a279369da34644860a256eba3f2e8142dad
   KERNEL_FIXES_REPO: https://github.com/Kazera62/kernel_fixes.git
-  KERNEL_FIXES_REF: 6d25b72110afdb239b17dc610ab129a2ad384fe9
+  KERNEL_FIXES_REF: 69f85adedaeffe440eeead90f3a39d73d05b10eb
   ARCH: arm64
   SUBARCH: arm64
   CC: clang
