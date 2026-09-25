@@ -276,16 +276,21 @@ jobs:
 
           echo 'Root integration checks passed.'
       - name: Apply SukiSU compatibility and KPM patches
-        if: env.ROOT_IMPL == 'sukisu-ultra' && env.KPM_ENABLE == 'on'
+        if: env.ROOT_IMPL == 'sukisu-ultra'
         shell: bash
         run: |
           set -euxo pipefail
-          curl -fL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/fe5053e603e20ce6ba97900da2c3c0229c7505d4/Patches/Patch/set_memory_to_49_and_low.patch" -o /tmp/set_memory_to_49_and_low.patch
-          git apply --check /tmp/set_memory_to_49_and_low.patch
-          git apply /tmp/set_memory_to_49_and_low.patch
+
+          # SukiSU-Ultra 4.9 compatibility is required even when KPM is off.
           curl -fL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/fe5053e603e20ce6ba97900da2c3c0229c7505d4/Patches/Patch/sukisu_ultra_fixed.patch" -o /tmp/sukisu_ultra_fixed.patch
-          git apply --check /tmp/sukisu_ultra_fixed.patch
-          git apply /tmp/sukisu_ultra_fixed.patch
+          git -C KernelSU apply --check /tmp/sukisu_ultra_fixed.patch
+          git -C KernelSU apply /tmp/sukisu_ultra_fixed.patch
+
+          if [ "$KPM_ENABLE" = "on" ]; then
+            curl -fL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/fe5053e603e20ce6ba97900da2c3c0229c7505d4/Patches/Patch/set_memory_to_49_and_low.patch" -o /tmp/set_memory_to_49_and_low.patch
+            git apply --check /tmp/set_memory_to_49_and_low.patch
+            git apply /tmp/set_memory_to_49_and_low.patch
+          fi
 
       - name: Apply ReSukiSU SUSFS 4.9 patches
         if: env.ROOT_IMPL == 'resukisu' && env.SUSFS_ENABLE == 'on'
