@@ -59,7 +59,7 @@ on:
           - r370808
           - r365631c
       performance_profile:
-        description: "Pilih preset performa dan preemption kernel."
+        description: "Pilih preset scheduler, preemption, boost, dan WALT kernel."
         type: choice
         required: true
         default: performance
