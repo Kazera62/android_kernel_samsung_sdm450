@@ -38,7 +38,7 @@ PATCH_VBMETA_FLAG=auto;
 # boot install
 dump_boot; # use split_boot to skip ramdisk unpack, e.g. for devices with init_boot ramdisk
 
-write_boot; # use flash_boot to skip ramdisk repack, e.g. for devices with init_boot
+write_boot; # use flash_boot to skip ramdisk repack, e.g. for devices with init_boot ramdisk
 ## end boot install
 
 
@@ -96,7 +96,7 @@ write_boot; # use flash_boot to skip ramdisk repack, e.g. for devices with init_
 #reset_ak;
 
 # vendor_boot install
-#dump_boot; # use split_boot to skip ramdisk unpack, e.g. for dtb on devices with hdr v4 but no vendor_boot
+#dump_boot; # use split_boot to skip ramdisk unpack, e.g. for dtb on devices with hdr v4 but no vendor_kernel_boot
 
 #write_boot; # use flash_boot to skip ramdisk unpack, e.g. for dtb on devices with hdr v4 but no vendor_boot
 ## end vendor_boot install
