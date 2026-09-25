@@ -59,12 +59,6 @@ sulog.write_text(text)
 # SukiSU v4.2.0 uses syscall_fn_t on ARM64, but the 4.9 arm64 headers expose
 # sys_call_table as void * and do not provide the newer sys_call_ptr_t alias.
 # Use a same-size generic function-pointer type for the table patcher.
-from pathlib import Path
-import sys
-
-hook = Path(sys.argv[1])
-init = Path(sys.argv[2])
-
 text = hook.read_text()
 old = '''#if defined(__x86_64__)
 typedef sys_call_ptr_t syscall_fn_t;
