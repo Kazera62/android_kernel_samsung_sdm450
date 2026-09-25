@@ -149,6 +149,8 @@ env:
   CORTEX_TUNE: ${{ inputs.cortex_a53_tune || 'on' }}
   ANYKERNEL3_REPO: https://github.com/Kazera62/AnyKernel3.git
   ANYKERNEL3_REF: 0ab72a279369da34644860a256eba3f2e8142dad
+  KERNEL_FIXES_REPO: https://github.com/Kazera62/kernel_fixes.git
+  KERNEL_FIXES_REF: 6d25b72110afdb239b17dc610ab129a2ad384fe9
   ARCH: arm64
   SUBARCH: arm64
   CC: clang
@@ -275,38 +277,29 @@ jobs:
           fi
 
           echo 'Root integration checks passed.'
-      - name: Apply SukiSU compatibility and KPM patches
-        if: env.ROOT_IMPL == 'sukisu-ultra'
+      - name: Apply kernel compatibility fixes
+        if: env.ROOT_IMPL != 'none'
         shell: bash
         run: |
           set -euxo pipefail
+          rm -rf .kernel-fixes
 
-          # SukiSU-Ultra 4.9 compatibility is required even when KPM is off.
-          curl -fL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/fe5053e603e20ce6ba97900da2c3c0229c7505d4/Patches/Patch/sukisu_ultra_fixed.patch" -o /tmp/sukisu_ultra_fixed.patch
-          git -C KernelSU/kernel apply --check /tmp/sukisu_ultra_fixed.patch
-          git -C KernelSU/kernel apply /tmp/sukisu_ultra_fixed.patch
+          git clone --depth=1 --branch main "$KERNEL_FIXES_REPO" .kernel-fixes
+          test "$(git -C .kernel-fixes rev-parse HEAD)" = "$KERNEL_FIXES_REF"
 
-          if [ "$KPM_ENABLE" = "on" ]; then
-            curl -fL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/fe5053e603e20ce6ba97900da2c3c0229c7505d4/Patches/Patch/set_memory_to_49_and_low.patch" -o /tmp/set_memory_to_49_and_low.patch
-            git apply --check /tmp/set_memory_to_49_and_low.patch
-            git apply /tmp/set_memory_to_49_and_low.patch
-          fi
+          bash .kernel-fixes/scripts/apply-fixes.sh \
+            --kernel-root "$GITHUB_WORKSPACE" \
+            --device sdm450 \
+            --root "$ROOT_IMPL" \
+            --kpm "$KPM_ENABLE" \
+            --susfs "$SUSFS_ENABLE"
 
-      - name: Apply ReSukiSU SUSFS 4.9 patches
-        if: env.ROOT_IMPL == 'resukisu' && env.SUSFS_ENABLE == 'on'
-        shell: bash
-        run: |
-          set -euxo pipefail
-          curl -fL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/fe5053e603e20ce6ba97900da2c3c0229c7505d4/Patches/Patch/susfs_patch_to_4.9.patch" -o /tmp/susfs_patch_to_4.9.patch
-          git apply --check /tmp/susfs_patch_to_4.9.patch
-          git apply /tmp/susfs_patch_to_4.9.patch
-          curl -fL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/fe5053e603e20ce6ba97900da2c3c0229c7505d4/Patches/susfs_inline_hook_patches.sh" -o /tmp/susfs_inline_hook_patches.sh
-          chmod +x /tmp/susfs_inline_hook_patches.sh
-          /tmp/susfs_inline_hook_patches.sh
-          test -s fs/susfs.c
-          test -s include/linux/susfs.h
-          test -s include/linux/susfs_def.h
-          grep -Rqs "CONFIG_KSU_SUSFS" fs/namespace.c fs/namei.c fs/stat.c fs/exec.c
+          bash .kernel-fixes/scripts/verify-fixes.sh \
+            --kernel-root "$GITHUB_WORKSPACE" \
+            --device sdm450 \
+            --root "$ROOT_IMPL" \
+            --kpm "$KPM_ENABLE" \
+            --susfs "$SUSFS_ENABLE"
       - name: Validate kernel feature support
         shell: bash
         run: |
