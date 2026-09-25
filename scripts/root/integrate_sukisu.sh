@@ -56,6 +56,7 @@ kernel_dir = Path(sys.argv[3])
 # of maintaining a brittle list of source files.
 removed_compiler_types = 0
 removed_pgtable = 0
+removed_task_stack = 0
 untagged_rewrites = 0
 for path in kernel_dir.rglob("*"):
     if path.suffix not in {".c", ".h"} or not path.is_file():
@@ -63,11 +64,14 @@ for path in kernel_dir.rglob("*"):
     text = path.read_text()
     new_text = text.replace("#include <linux/compiler_types.h>\n", "")
     new_text = new_text.replace("#include <linux/pgtable.h>\n", "")
+    new_text = new_text.replace("#include <linux/sched/task_stack.h>\n", "")
     if new_text != text:
         if "#include <linux/compiler_types.h>\n" in text:
             removed_compiler_types += 1
         if "#include <linux/pgtable.h>\n" in text:
             removed_pgtable += 1
+        if "#include <linux/sched/task_stack.h>\n" in text:
+            removed_task_stack += 1
         path.write_text(new_text)
         text = new_text
 
@@ -79,7 +83,29 @@ for path in kernel_dir.rglob("*"):
 
 print(f"[sukisu] Removed linux/compiler_types.h from {removed_compiler_types} SukiSU source files")
 print(f"[sukisu] Removed linux/pgtable.h from {removed_pgtable} SukiSU source files")
+print(f"[sukisu] Removed linux/sched/task_stack.h from {removed_task_stack} SukiSU source files")
 print(f"[sukisu] Rewrote untagged_addr() for Linux 4.9 in {untagged_rewrites} SukiSU source files")
+
+# Linux 4.9 arm64 exposes current_stack_pointer from asm/stack_pointer.h,
+# while newer SukiSU uses current_user_stack_pointer() from task_stack.h.
+for path in kernel_dir.rglob("*"):
+    if path.suffix not in {".c", ".h"} or not path.is_file():
+        continue
+    text = path.read_text()
+    if "current_user_stack_pointer()" not in text or "current_user_stack_pointer" in text and "linux/sched/task_stack.h" in text:
+        continue
+    if "arch/arm64" not in str(path) and path.name != "sucompat.c":
+        continue
+    if "current_user_stack_pointer()" not in text:
+        continue
+    if "#include \"<asm/stack_pointer.h>\"" not in text:
+        text = '#include <asm/stack_pointer.h>\\n' + text
+    compat = '''\\n#ifndef current_user_stack_pointer\\nstatic inline unsigned long current_user_stack_pointer(void)\\n{\\n    return current_stack_pointer;\\n}\\n#endif\\n\\n'''
+    if compat.strip() not in text:
+        text = text.replace('\\n', compat, 1)
+        path.write_text(text)
+        print(f"[sukisu] Added Linux 4.9 current_user_stack_pointer shim: {path}")
+
 
 # SukiSU v4.2.0 uses syscall_fn_t on ARM64, but the 4.9 arm64 headers expose
 # sys_call_table as void * and do not provide the newer sys_call_ptr_t alias.
@@ -113,6 +139,10 @@ if old in text and '#ifdef MODULE_IMPORT_NS' not in text:
 
 print("[sukisu] Applied Linux 4.9 ARM64 compatibility fixes")
 PY
+
+if grep -Rqs '#include <linux/sched/task_stack.h>' "$KSU_DIR"; then
+  die "linux/sched/task_stack.h survived the Linux 4.9 compatibility transform"
+fi
 
 log "Removing previous drivers/kernelsu integration if present"
 rm -rf "$DRIVER_DIR/kernelsu"
