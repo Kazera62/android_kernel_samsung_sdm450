@@ -579,7 +579,7 @@ jobs:
             echo "psi=$PSI_ENABLE"
             echo "cortex_a53_tune=$CORTEX_TUNE"
             echo "base_config=a11q_open_defconfig"
-            echo "target=Samsung SM-M11 / SM-A11 (SDM450)"
+            echo "target=Samsung Galaxy M11 / A11 (SDM450)"
             echo "kernel_release=$(make -s O=out kernelrelease)"
           } > dist/BUILD_INFO.txt
 
@@ -654,7 +654,16 @@ jobs:
           (
             cd .anykernel3
             sha256sum Image.gz-dtb anykernel.sh KAZERA_BUILD_INFO.txt > KAZERA_SHA256SUMS
-            zip -r9 "$GITHUB_WORKSPACE/dist/${KERNEL_NAME_SLUG}-AnyKernel3-${GITHUB_RUN_NUMBER}.zip" . -x ".git/*"
+            zip -r9 "$GITHUB_WORKSPACE/dist/${KERNEL_NAME_SLUG}-AnyKernel3-${GITHUB_RUN_NUMBER}.zip" \
+              anykernel.sh \
+              Image.gz-dtb \
+              META-INF \
+              tools \
+              modules \
+              patch \
+              ramdisk \
+              KAZERA_BUILD_INFO.txt \
+              KAZERA_SHA256SUMS
           )
 
           TELEGRAM_ZIP="$GITHUB_WORKSPACE/dist/${KERNEL_NAME_SLUG}-AnyKernel3-${GITHUB_RUN_NUMBER}.zip"
