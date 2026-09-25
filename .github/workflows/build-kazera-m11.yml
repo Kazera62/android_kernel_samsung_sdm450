@@ -202,7 +202,11 @@ jobs:
           test -x "clang-toolchain/$CLANG_DIR/bin/clang"
           mv "clang-toolchain/$CLANG_DIR" "$TOOLCHAIN_ROOT"
           rm -rf clang-toolchain
+          export PATH="$TOOLCHAIN_ROOT/bin:$PATH"
           echo "$TOOLCHAIN_ROOT/bin" >> "$GITHUB_PATH"
+          hash -r
+          command -v clang
+          command -v ld.lld
           clang --version
           ld.lld --version
           aarch64-linux-gnu-gcc --version | head -n 1
