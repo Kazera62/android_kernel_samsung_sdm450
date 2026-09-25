@@ -155,7 +155,7 @@ static inline long ksu_call_original_syscall(int nr, struct pt_regs *regs)
     unsigned long args[6] = { 0 };
     ksu_legacy_raw_syscall_t fn;
 
-    syscall_get_arguments(current, regs, 0, ARRAY_SIZE(args), args);
+    syscall_get_arguments(current, regs, 0, 6, args);
     fn = (ksu_legacy_raw_syscall_t)ksu_syscall_table[nr];
 
     return fn(args[0], args[1], args[2], args[3], args[4], args[5]);
