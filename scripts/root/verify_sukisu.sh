@@ -26,6 +26,15 @@ grep -Fq '#elif defined(__aarch64__)' "$KSU_DIR/hook/syscall_hook.h" || die "ARM
 grep -Fq 'typedef void (*syscall_fn_t)(void);' "$KSU_DIR/hook/syscall_hook.h" || die "ARM64 syscall_fn_t typedef missing"
 grep -Fq 'ksu_call_original_syscall' "$KSU_DIR/hook/syscall_hook.h" || die "Linux 4.9 syscall ABI shim missing"
 grep -Fq 'ksu_strncpy_from_user_nofault' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 strncpy compatibility shim missing"
+python3 - "$KSU_DIR" <<'PY'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+for path in root.rglob("*.c"):
+    text = path.read_text()
+    if "ksu_strncpy_from_user_nofault(" in text and '#include "kernel_compat.h"' not in text:
+        raise SystemExit(f"kernel_compat.h missing from {path}")
+PY
 grep -Fq '#define ksu_close_fd sys_close' "$KSU_DIR/include/util.h" || die "Linux 4.9 sys_close compatibility shim missing"
 python3 - "$KSU_DIR" <<'PY'
 from pathlib import Path
