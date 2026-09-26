@@ -322,6 +322,23 @@ jobs:
                   raise SystemExit(f"SUSFS v2.1.0 port pattern not found: {path}")
               p.write_text(s.replace(old, new, 1), encoding="utf-8")
 
+          # fs/open.c: the v2.1.0 patch adds OPEN_REDIRECT macro calls but
+          # its generic diff does not include the SUSFS definition header in
+          # this 4.9 Samsung tree. Add the header explicitly.
+          const_open = Path("fs/open.c")
+          s = const_open.read_text(encoding="utf-8")
+          if "#include <linux/susfs_def.h>" not in s:
+              marker = "#include <linux/compat.h>\n"
+              addition = """#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+          #include <linux/susfs_def.h>
+          #endif
+
+          """
+              if marker not in s:
+                  raise SystemExit("fs/open.c include anchor missing")
+              s = s.replace(marker, marker + addition, 1)
+              const_open.write_text(s, encoding="utf-8")
+
           # fs/namespace.c: preserve the Samsung fslog include while adding
           # the SUS_MOUNT declarations from the v2.1.0 patch.
           ns = Path("fs/namespace.c")
@@ -998,5 +1015,3 @@ jobs:
           printf '%s\n' "$RESPONSE" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
             echo "Telegram API did not report success." >&2
             printf '%s\n' "$RESPONSE" >&2
-            exit 1
-          }
