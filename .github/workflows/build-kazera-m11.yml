@@ -794,7 +794,7 @@ jobs:
                 test "$(grep -c "^${susfs_cfg}=y$" out/.config)" -eq 1
               done
               test "$(grep -c "^CONFIG_KPM=y$" out/.config || true)" -eq 0
-              test "$(grep -F '#define SUSFS_VERSION \"v2.1.0\"' include/linux/susfs.h | wc -l)" -eq 1
+              test "$(grep -F '#define SUSFS_VERSION "v2.1.0"' include/linux/susfs.h | wc -l)" -eq 1
               ;;
             *)
               echo "Unsupported root implementation: $ROOT_IMPL" >&2
