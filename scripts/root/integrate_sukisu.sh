@@ -1508,6 +1508,351 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
     rules.write_text(text)
     print("[sukisu] Applied deep Linux 4.9 SELinux policydb compatibility")
 
+# Linux 4.9 SELinux sepolicy internal-structure compatibility.
+# Vendor 4.9 uses flex_array for avtab/type arrays and the old
+# filename_trans { stype, ttype, tclass, name } representation.
+sepolicy = kernel_dir / "selinux" / "sepolicy.c"
+if sepolicy.is_file():
+    source = sepolicy.read_text()
+    updated = source
+
+    # Linux 4.9 avtab.htable is a flex_array of node pointers.
+    avtab_helpers = """
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+#define KSU_AVTAB_HEAD(a, i) flex_array_get_ptr((a)->htable, (i))
+static inline void ksu_avtab_set_head(struct avtab *a, unsigned int i,
+                                      struct avtab_node *node)
+{
+    if (flex_array_put_ptr(a->htable, i, node, GFP_KERNEL | __GFP_ZERO))
+        BUG();
+}
+#define KSU_AVTAB_FOR_EACH_HEAD(a, i, cur) \
+    for ((i) = 0; (i) < (a)->nslot; ++(i)) \
+        for ((cur) = KSU_AVTAB_HEAD((a), (i)); (cur); (cur) = (cur)->next)
+#endif
+"""
+    if avtab_helpers.strip() not in updated:
+        insert_at = updated.find("#define avtab_for_each")
+        if insert_at < 0:
+            raise SystemExit("SukiSU sepolicy avtab macro insertion marker not found")
+        line_end = updated.find("\n", insert_at)
+        updated = updated[:line_end + 1] + avtab_helpers + updated[line_end + 1:]
+
+    updated = updated.replace(
+        "for (n = db->te_avtab.htable[i]; n; prev = n, n = n->next) {",
+        "for (n = KSU_AVTAB_HEAD(&db->te_avtab, i); n; prev = n, n = n->next) {",
+    )
+    updated = updated.replace(
+        "db->te_avtab.htable[i] = n->next;",
+        "ksu_avtab_set_head(&db->te_avtab, i, n->next);",
+    )
+    updated = updated.replace(
+        "removed.htable[0] = n;",
+        "ksu_avtab_set_head(&removed, 0, n);",
+    )
+
+    # Extract and replace add_filename_trans() with a native Linux 4.9 path,
+    # retaining the original implementation behind #else for newer kernels.
+    def replace_function(text, signature, replacement):
+        start = text.find(signature)
+        if start < 0:
+            raise SystemExit("function signature not found: " + signature)
+        brace = text.find("{", start)
+        if brace < 0:
+            raise SystemExit("function opening brace not found: " + signature)
+        depth = 0
+        in_string = False
+        escape = False
+        end = -1
+        for pos in range(brace, len(text)):
+            ch = text[pos]
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    end = pos + 1
+                    break
+        if end < 0:
+            raise SystemExit("function closing brace not found: " + signature)
+        original = text[start:end]
+        if "#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)" in original:
+            return text, False
+        wrapped = replacement.replace("__ORIGINAL_FUNCTION__", original)
+        return text[:start] + wrapped + text[end:], True
+
+    old_filename = """static bool add_filename_trans(struct policydb *db, const char *s, const char *t, const char *c,
+                               const char *d, const char *o)"""
+    new_filename = """#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+static bool add_filename_trans(struct policydb *db, const char *s, const char *t, const char *c,
+                               const char *d, const char *o)
+{
+    struct type_datum *src, *tgt, *def;
+    struct class_datum *cls;
+    struct filename_trans key;
+    struct filename_trans *new_key;
+    struct filename_trans_datum *datum;
+
+    src = symtab_search(&db->p_types, s);
+    tgt = symtab_search(&db->p_types, t);
+    cls = symtab_search(&db->p_classes, c);
+    def = symtab_search(&db->p_types, d);
+    if (!src || !tgt || !cls || !def)
+        return false;
+
+    key.stype = src->value;
+    key.ttype = tgt->value;
+    key.tclass = cls->value;
+    key.name = o;
+
+    datum = hashtab_search(db->filename_trans, &key);
+    if (datum) {
+        datum->otype = def->value;
+        return true;
+    }
+
+    new_key = kzalloc(sizeof(*new_key), GFP_KERNEL);
+    if (!new_key)
+        return false;
+    new_key->stype = key.stype;
+    new_key->ttype = key.ttype;
+    new_key->tclass = key.tclass;
+    new_key->name = kstrdup(o, GFP_KERNEL);
+    if (!new_key->name) {
+        kfree(new_key);
+        return false;
+    }
+
+    datum = kzalloc(sizeof(*datum), GFP_KERNEL);
+    if (!datum) {
+        kfree(new_key->name);
+        kfree(new_key);
+        return false;
+    }
+    datum->otype = def->value;
+
+    if (hashtab_insert(db->filename_trans, new_key, datum)) {
+        kfree((char *)new_key->name);
+        kfree(new_key);
+        kfree(datum);
+        return false;
+    }
+
+    if (ebitmap_set_bit(&db->filename_trans_ttypes, tgt->value, 1)) {
+        pr_warn("failed to mark filename transition target type %u\n", tgt->value);
+    }
+
+    return true;
+}
+#else
+__ORIGINAL_FUNCTION__
+#endif"""
+    updated, filename_changed = replace_function(updated, old_filename, new_filename)
+
+    # Replace add_type() for Linux 4.9. Newer kernels keep the existing
+    # pointer arrays; 4.9 stores these in flex_array objects.
+    old_add_type = """static bool add_type(struct policydb *db, const char *type_name, bool attr)"""
+    new_add_type = """#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+static struct flex_array *ksu_clone_ptr_flex_array(struct flex_array *old,
+                                                   unsigned int old_count,
+                                                   unsigned int new_count)
+{
+    struct flex_array *newfa;
+    unsigned int i;
+
+    newfa = flex_array_alloc(sizeof(void *), new_count,
+                             GFP_KERNEL | __GFP_ZERO);
+    if (!newfa)
+        return NULL;
+    if (flex_array_prealloc(newfa, 0, new_count,
+                            GFP_KERNEL | __GFP_ZERO)) {
+        flex_array_free(newfa);
+        return NULL;
+    }
+
+    for (i = 0; i < old_count; ++i) {
+        void *p = flex_array_get_ptr(old, i);
+        if (p && flex_array_put_ptr(newfa, i, p,
+                                    GFP_KERNEL | __GFP_ZERO)) {
+            flex_array_free(newfa);
+            return NULL;
+        }
+    }
+    return newfa;
+}
+
+static struct flex_array *ksu_clone_ebitmap_flex_array(struct flex_array *old,
+                                                       unsigned int old_count,
+                                                       unsigned int new_count)
+{
+    struct flex_array *newfa;
+    unsigned int i;
+
+    newfa = flex_array_alloc(sizeof(struct ebitmap), new_count,
+                             GFP_KERNEL | __GFP_ZERO);
+    if (!newfa)
+        return NULL;
+    if (flex_array_prealloc(newfa, 0, new_count,
+                            GFP_KERNEL | __GFP_ZERO)) {
+        flex_array_free(newfa);
+        return NULL;
+    }
+
+    for (i = 0; i < old_count; ++i) {
+        struct ebitmap *src = flex_array_get(old, i);
+        struct ebitmap *dst = flex_array_get(newfa, i);
+        if (!src || !dst || ebitmap_cpy(dst, src)) {
+            unsigned int j;
+            for (j = 0; j <= i && j < old_count; ++j) {
+                struct ebitmap *tmp = flex_array_get(newfa, j);
+                if (tmp)
+                    ebitmap_destroy(tmp);
+            }
+            flex_array_free(newfa);
+            return NULL;
+        }
+    }
+    return newfa;
+}
+
+static void ksu_destroy_ebitmap_flex_array(struct flex_array *fa,
+                                           unsigned int count)
+{
+    unsigned int i;
+    if (!fa)
+        return;
+    for (i = 0; i < count; ++i) {
+        struct ebitmap *e = flex_array_get(fa, i);
+        if (e)
+            ebitmap_destroy(e);
+    }
+    flex_array_free(fa);
+}
+
+static bool add_type(struct policydb *db, const char *type_name, bool attr)
+{
+    struct type_datum *type;
+    char *key;
+    unsigned int old_count, value;
+    struct flex_array *new_attrs, *new_types, *new_names;
+    struct flex_array *old_attrs, *old_types, *old_names;
+
+    if (symtab_search(&db->p_types, type_name))
+        return true;
+
+    old_count = db->p_types.nprim;
+    value = old_count + 1;
+
+    type = kzalloc(sizeof(*type), GFP_KERNEL);
+    if (!type)
+        return false;
+    type->primary = 1;
+    type->value = value;
+    type->attribute = attr;
+
+    key = kstrdup(type_name, GFP_KERNEL);
+    if (!key) {
+        kfree(type);
+        return false;
+    }
+
+    old_attrs = db->type_attr_map_array;
+    old_types = db->type_val_to_struct_array;
+    old_names = db->sym_val_to_name[SYM_TYPES];
+
+    new_attrs = ksu_clone_ebitmap_flex_array(old_attrs, old_count, value);
+    new_types = ksu_clone_ptr_flex_array(old_types, old_count, value);
+    new_names = ksu_clone_ptr_flex_array(old_names, old_count, value);
+    if (!new_attrs || !new_types || !new_names) {
+        if (new_attrs)
+            ksu_destroy_ebitmap_flex_array(new_attrs, value);
+        if (new_types)
+            flex_array_free(new_types);
+        if (new_names)
+            flex_array_free(new_names);
+        kfree(key);
+        kfree(type);
+        return false;
+    }
+
+    if (symtab_insert(&db->p_types, key, type)) {
+        ksu_destroy_ebitmap_flex_array(new_attrs, value);
+        flex_array_free(new_types);
+        flex_array_free(new_names);
+        kfree(key);
+        kfree(type);
+        return false;
+    }
+
+    db->type_attr_map_array = new_attrs;
+    db->type_val_to_struct_array = new_types;
+    db->sym_val_to_name[SYM_TYPES] = new_names;
+    db->p_types.nprim = value;
+
+    {
+        struct ebitmap *new_attr = flex_array_get(new_attrs, value - 1);
+        if (!new_attr)
+            return false;
+        ebitmap_init(new_attr);
+        if (ebitmap_set_bit(new_attr, value - 1, 1))
+            return false;
+    }
+
+    if (flex_array_put_ptr(new_types, value - 1, type,
+                           GFP_KERNEL | __GFP_ZERO))
+        return false;
+    if (flex_array_put_ptr(new_names, value - 1, key,
+                           GFP_KERNEL | __GFP_ZERO))
+        return false;
+
+    for (unsigned int i = 0; i < db->p_roles.nprim; ++i) {
+        ebitmap_set_bit(&db->role_val_to_struct[i]->types,
+                        value - 1, 1);
+    }
+
+    ksu_destroy_ebitmap_flex_array(old_attrs, old_count);
+    flex_array_free(old_types);
+    flex_array_free(old_names);
+    return true;
+}
+#else
+__ORIGINAL_FUNCTION__
+#endif"""
+    updated, add_type_changed = replace_function(updated, old_add_type, new_add_type)
+
+    # Patch direct newer array member accesses in helpers that are shared
+    # between old and new kernels.
+    if "#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)" in updated:
+        updated = updated.replace(
+            "struct ebitmap *sattr = &db->type_attr_map_array[type->value - 1];",
+            """struct ebitmap *sattr =
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+        (struct ebitmap *)flex_array_get(db->type_attr_map_array, type->value - 1);
+#else
+        &db->type_attr_map_array[type->value - 1];
+#endif""",
+        )
+    if not filename_changed:
+        raise SystemExit("SukiSU 4.9 filename transition transform did not apply")
+    if not add_type_changed:
+        raise SystemExit("SukiSU 4.9 add_type transform did not apply")
+
+    if "db->type_val_to_struct[" in updated:
+        raise SystemExit("SukiSU sepolicy still uses unavailable 4.9 type_val_to_struct array")
+    if "struct filename_trans_key" in updated and "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)" not in updated:
+        raise SystemExit("SukiSU sepolicy still exposes newer filename_trans_key on Linux 4.9")
+    sepolicy.write_text(updated)
+    print("[sukisu] Applied Linux 4.9 SELinux sepolicy internal-structure compatibility")
 # SukiSU v4.2.0 uses syscall_fn_t on ARM64.
 # Linux 4.9 ARM64 sys_call_table entries use the legacy:
 #     long handler(const struct pt_regs *)
