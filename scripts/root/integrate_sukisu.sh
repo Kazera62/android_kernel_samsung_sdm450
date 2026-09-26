@@ -291,7 +291,7 @@ if file_wrapper.is_file():
     fw = file_wrapper.read_text()
 
     if "#include <linux/module.h>" not in fw:
-        fw = fw.replace("#include <linux/gfp.h>\\n", "#include <linux/gfp.h>\\n#include <linux/module.h>\\n", 1)
+        fw = fw.replace("#include <linux/gfp.h>", "#include <linux/gfp.h>\n#include <linux/module.h>", 1)
 
     # __poll_t does not exist in Linux 4.9; file_operations::poll returns
     # unsigned int there.
@@ -302,10 +302,10 @@ if file_wrapper.is_file():
     )
 
     # iopoll was added long after 4.9 and must not be referenced at all.
-    iopoll_start = fw.find("#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)\\nstatic int ksu_wrapper_iopoll")
-    iopoll_end = fw.find("#endif\\n\\n#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)", iopoll_start)
+    iopoll_start = fw.find("#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)\nstatic int ksu_wrapper_iopoll")
+    iopoll_end = fw.find("#endif\n\n#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)", iopoll_start)
     if iopoll_start >= 0 and iopoll_end >= 0:
-        fw = fw[:iopoll_start] + fw[iopoll_end + len("#endif\\n\\n"):]
+        fw = fw[:iopoll_start] + fw[iopoll_end + len("#endif\n\n"): ]
     else:
         print("[sukisu] file_wrapper iopoll block already absent or source variant differs")
 
@@ -326,8 +326,8 @@ if file_wrapper.is_file():
         fw = fw[:remap_start] + fw[remap_end:]
 
     fw = fw.replace(
-        "    p->ops.remap_file_range = fp->f_op->remap_file_range ? ksu_wrapper_remap_file_range : NULL;\\n"
-        "    p->ops.fadvise = fp->f_op->fadvise ? ksu_wrapper_fadvise : NULL;\\n",
+        "    p->ops.remap_file_range = fp->f_op->remap_file_range ? ksu_wrapper_remap_file_range : NULL;\n"
+        "    p->ops.fadvise = fp->f_op->fadvise ? ksu_wrapper_fadvise : NULL;\n",
         "",
         1,
     )
