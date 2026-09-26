@@ -288,53 +288,101 @@ print(f"[sukisu] Rewired legacy ARM64 syscall-table calls in {replaced_calls} Su
 # SukiSU's fd wrapper must only reference fields that exist in 4.9.
 file_wrapper = kernel_dir / "infra" / "file_wrapper.c"
 if file_wrapper.is_file():
+    import re
+
     fw = file_wrapper.read_text()
 
+    # Linux 4.9 declares try_module_get()/module_put() in linux/module.h.
     if "#include <linux/module.h>" not in fw:
-        fw = fw.replace("#include <linux/gfp.h>", "#include <linux/gfp.h>\n#include <linux/module.h>", 1)
+        fw = fw.replace(
+            "#include <linux/gfp.h>",
+            "#include <linux/gfp.h>\n#include <linux/module.h>",
+            1,
+        )
 
-    # __poll_t does not exist in Linux 4.9; file_operations::poll returns
-    # unsigned int there.
+    # Linux 4.9 uses unsigned int for file_operations::poll.
     fw = fw.replace(
         "static __poll_t ksu_wrapper_poll(struct file *fp, struct poll_table_struct *pts)",
         "static unsigned int ksu_wrapper_poll(struct file *fp, struct poll_table_struct *pts)",
         1,
     )
 
-    # iopoll was added long after 4.9 and must not be referenced at all.
-    iopoll_start = fw.find("#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)\nstatic int ksu_wrapper_iopoll")
-    iopoll_end = fw.find("#endif\n\n#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)", iopoll_start)
-    if iopoll_start >= 0 and iopoll_end >= 0:
-        fw = fw[:iopoll_start] + fw[iopoll_end + len("#endif\n\n"): ]
-    else:
-        print("[sukisu] file_wrapper iopoll block already absent or source variant differs")
-
-    # mmap_supported_flags is not part of Linux 4.9's file_operations.
-    mmap_flags = '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
-    p->ops.fop_flags = fp->f_op->fop_flags;
-#else
-    p->ops.mmap_supported_flags = fp->f_op->mmap_supported_flags;
-#endif
-'''
-    if mmap_flags in fw:
-        fw = fw.replace(mmap_flags, "", 1)
-
-    # remap_file_range and fadvise are newer VFS callbacks and absent from 4.9.
-    remap_start = fw.find("// no REMAP_FILE_DEDUP:")
-    remap_end = fw.find("static void ksu_release_file_wrapper", remap_start)
-    if remap_start >= 0 and remap_end >= 0:
-        fw = fw[:remap_start] + fw[remap_end:]
-
-    fw = fw.replace(
-        "    p->ops.remap_file_range = fp->f_op->remap_file_range ? ksu_wrapper_remap_file_range : NULL;\n"
-        "    p->ops.fadvise = fp->f_op->fadvise ? ksu_wrapper_fadvise : NULL;\n",
-        "",
-        1,
+    # iopoll is not present in the 4.9 file_operations structure.
+    fw = re.sub(
+        r"\n#if LINUX_VERSION_CODE >= KERNEL_VERSION\(6, 1, 0\)\nstatic int ksu_wrapper_iopoll.*?\n#endif\n",
+        "\n",
+        fw,
+        count=1,
+        flags=re.S,
     )
+    fw = re.sub(
+        r"^\\s*p->ops\.iopoll = fp->f_op->iopoll \? ksu_wrapper_iopoll : NULL;\\n",
+        "",
+        fw,
+        count=1,
+        flags=re.M,
+    )
+
+    # mmap_supported_flags and modern fop_flags are not present in 4.9.
+    fw = re.sub(
+        r"\n#if LINUX_VERSION_CODE >= KERNEL_VERSION\(6, 12, 0\).*?\n#endif\n",
+        "\n",
+        fw,
+        count=1,
+        flags=re.S,
+    )
+
+    # remap_file_range() and fadvise() are not file_operations callbacks in 4.9.
+    fw = re.sub(
+        r"// no REMAP_FILE_DEDUP:.*?^static int ksu_wrapper_fadvise",
+        "static int ksu_wrapper_fadvise",
+        fw,
+        count=1,
+        flags=re.S | re.M,
+    )
+    fw = re.sub(
+        r"^static int ksu_wrapper_fadvise.*?^static void ksu_release_file_wrapper",
+        "static void ksu_release_file_wrapper",
+        fw,
+        count=1,
+        flags=re.S | re.M,
+    )
+    fw = re.sub(
+        r"^\\s*p->ops\.remap_file_range =.*?\n",
+        "",
+        fw,
+        count=1,
+        flags=re.M,
+    )
+    fw = re.sub(
+        r"^\\s*p->ops\.fadvise =.*?\n",
+        "",
+        fw,
+        count=1,
+        flags=re.M,
+    )
+
+    # Hard fail if an unsupported 4.9 callback leaked through. This turns
+    # future API drift into an integration error instead of a late compiler
+    # failure.
+    forbidden = (
+        "ksu_wrapper_iopoll",
+        ".iopoll",
+        "__poll_t",
+        ".mmap_supported_flags",
+        ".fop_flags",
+        ".remap_file_range",
+        ".fadvise",
+        "REMAP_FILE_DEDUP",
+    )
+    leaked = [token for token in forbidden if token in fw]
+    if leaked:
+        raise SystemExit(
+            "Linux 4.9 file_wrapper unsupported API remains: " + ", ".join(leaked)
+        )
 
     file_wrapper.write_text(fw)
     print("[sukisu] Applied Linux 4.9 VFS file_wrapper compatibility")
-
 
 bridge_path = kernel_dir / "hook" / "syscall_event_bridge.c"
 if bridge_path.is_file():
