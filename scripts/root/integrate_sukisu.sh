@@ -347,8 +347,7 @@ if file_wrapper.is_file():
     fw = re.sub(r"^\s*p->ops\.fadvise\s*=.*\n", "", fw, count=1, flags=re.M)
 
     # Upstream's pre-5.16 helper calls security_inode_init_security_anon(), which
-    # does not exist in this 4.9 tree. Keep the unique-anon-inode design, but
-    # initialize the inode with the APIs actually present in this kernel.
+    # does not exist in this 4.9 tree. Keep the unique-anon-inode design, but    # initialize the inode with the APIs actually present in this kernel.
     compat_start = fw.find("#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)")
     compat_end = fw.find("#endif\n\nint ksu_install_file_wrapper", compat_start)
     if compat_start < 0 or compat_end < 0:
@@ -675,8 +674,8 @@ for path in kernel_dir.rglob("*"):
     if path.suffix not in {".c", ".h"} or not path.is_file():
         continue
     source = path.read_text()
-    updated = re.sub(r"(?<![A-Za-z0-9_])kernel_read\\(", "ksu_kernel_read(", source)
-    updated = re.sub(r"(?<![A-Za-z0-9_])kernel_write\\(", "ksu_kernel_write(", updated)
+    updated = re.sub(r"(?<![A-Za-z0-9_])kernel_read\(", "ksu_kernel_read(", source)
+    updated = re.sub(r"(?<![A-Za-z0-9_])kernel_write\(", "ksu_kernel_write(", updated)
     if updated != source:
         path.write_text(updated)
         replaced_io += 1
@@ -697,8 +696,7 @@ replaced_twa = 0
 for rel in ("policy/allowlist.c", "supercall/supercall.c"):
     path = kernel_dir / rel
     if not path.is_file():
-        continue
-    source = path.read_text()
+        continue    source = path.read_text()
     updated = source.replace("TWA_RESUME", "true")
     if updated != source:
         path.write_text(updated)
