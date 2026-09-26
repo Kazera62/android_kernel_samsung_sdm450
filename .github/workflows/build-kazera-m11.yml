@@ -311,199 +311,199 @@ jobs:
             patch -p1 --forward --batch < .ci-patches/susfs_patch_to_4.9.patch || true
 
             python3 - <<'PY'
-            from pathlib import Path
+          from pathlib import Path
 
-            def replace_once(path, old, new):
-                p = Path(path)
-                s = p.read_text(encoding="utf-8")
-                if new in s:
-                    return
-                if old not in s:
-                    raise SystemExit(f"SUSFS v2.1.0 port pattern not found: {path}")
-                p.write_text(s.replace(old, new, 1), encoding="utf-8")
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text(encoding="utf-8")
+              if new in s:
+                  return
+              if old not in s:
+                  raise SystemExit(f"SUSFS v2.1.0 port pattern not found: {path}")
+              p.write_text(s.replace(old, new, 1), encoding="utf-8")
 
-            # fs/namespace.c: preserve the Samsung fslog include while adding
-            # the SUS_MOUNT declarations from the v2.1.0 patch.
-            ns = Path("fs/namespace.c")
-            s = ns.read_text(encoding="utf-8")
-            if "susfs_is_current_ksu_domain" not in s:
-                marker = "#include <linux/task_work.h>\n"
-                addition = """#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-            #include <linux/susfs_def.h>
-            #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          # fs/namespace.c: preserve the Samsung fslog include while adding
+          # the SUS_MOUNT declarations from the v2.1.0 patch.
+          ns = Path("fs/namespace.c")
+          s = ns.read_text(encoding="utf-8")
+          if "susfs_is_current_ksu_domain" not in s:
+              marker = "#include <linux/task_work.h>\n"
+              addition = """#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          #include <linux/susfs_def.h>
+          #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 
-            #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-            extern bool susfs_is_current_ksu_domain(void);
-            extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;
-            #define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */
-            #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          extern bool susfs_is_current_ksu_domain(void);
+          extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;
+          #define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */
+          #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 
-            """
-                if marker not in s:
-                    raise SystemExit("namespace.c include anchor missing")
-                s = s.replace(marker, marker + addition, 1)
-                ns.write_text(s, encoding="utf-8")
+          """
+              if marker not in s:
+                  raise SystemExit("namespace.c include anchor missing")
+              s = s.replace(marker, marker + addition, 1)
+              ns.write_text(s, encoding="utf-8")
 
-            # fs/proc/cmdline.c: this kernel uses saved_command_line instead
-            # of the newer proc_command_line path.
-            cmd = Path("fs/proc/cmdline.c")
-            s = cmd.read_text(encoding="utf-8")
-            if "susfs_spoof_cmdline_or_bootconfig" not in s:
-                inc = "#include <linux/seq_file.h>\n"
-                addition = """#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-            extern struct static_key_false susfs_is_fake_cmdline_or_bootconfig_buffer_set;
-            extern void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
-            #endif
+          # fs/proc/cmdline.c: this kernel uses saved_command_line instead
+          # of the newer proc_command_line path.
+          cmd = Path("fs/proc/cmdline.c")
+          s = cmd.read_text(encoding="utf-8")
+          if "susfs_spoof_cmdline_or_bootconfig" not in s:
+              inc = "#include <linux/seq_file.h>\n"
+              addition = """#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+          extern struct static_key_false susfs_is_fake_cmdline_or_bootconfig_buffer_set;
+          extern void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
+          #endif
 
-            """
-                if inc not in s:
-                    raise SystemExit("cmdline.c include anchor missing")
-                s = s.replace(inc, inc + addition, 1)
-            if "susfs_is_fake_cmdline_or_bootconfig_buffer_set" not in s.split("static int cmdline_proc_show",1)[-1]:
-                old_show = """static int cmdline_proc_show(struct seq_file *m, void *v)
-            {
-            	seq_printf(m, "%s\\n", saved_command_line);
-            	return 0;
-            }"""
-                new_show = """static int cmdline_proc_show(struct seq_file *m, void *v)
-            {
-            #ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-            	if (static_branch_likely(&susfs_is_fake_cmdline_or_bootconfig_buffer_set)) {
-            		susfs_spoof_cmdline_or_bootconfig(m);
-            		seq_putc(m, '\\n');
-            		return 0;
-            	}
-            #endif
-            	seq_printf(m, "%s\\n", saved_command_line);
-            	return 0;
-            }"""
-                if old_show not in s:
-                    raise SystemExit("cmdline.c show function anchor missing")
-                s = s.replace(old_show, new_show, 1)
-            cmd.write_text(s, encoding="utf-8")
+          """
+              if inc not in s:
+                  raise SystemExit("cmdline.c include anchor missing")
+              s = s.replace(inc, inc + addition, 1)
+          if "susfs_is_fake_cmdline_or_bootconfig_buffer_set" not in s.split("static int cmdline_proc_show",1)[-1]:
+              old_show = """static int cmdline_proc_show(struct seq_file *m, void *v)
+          {
+          	seq_printf(m, "%s\\n", saved_command_line);
+          	return 0;
+          }"""
+              new_show = """static int cmdline_proc_show(struct seq_file *m, void *v)
+          {
+          #ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+          	if (static_branch_likely(&susfs_is_fake_cmdline_or_bootconfig_buffer_set)) {
+          		susfs_spoof_cmdline_or_bootconfig(m);
+          		seq_putc(m, '\\n');
+          		return 0;
+          	}
+          #endif
+          	seq_printf(m, "%s\\n", saved_command_line);
+          	return 0;
+          }"""
+              if old_show not in s:
+                  raise SystemExit("cmdline.c show function anchor missing")
+              s = s.replace(old_show, new_show, 1)
+          cmd.write_text(s, encoding="utf-8")
 
-            # fs/proc/task_mmu.c: Samsung's 4.9 tree has the older,
-            # simpler show_map_vma() layout.
-            mmu = Path("fs/proc/task_mmu.c")
-            s = mmu.read_text(encoding="utf-8")
-            if "susfs_open_redirect_spoof_show_map_vma" not in s:
-                anchor = """static void
-            show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
-            {"""
-                externs = """#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-            extern void susfs_sus_kstat_spoof_show_map_vma(struct inode *inode, dev_t *out_dev, unsigned long *out_ino);
-            #endif
-            #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-            extern int susfs_open_redirect_spoof_show_map_vma(struct inode *inode, unsigned long *out_ino, dev_t *out_dev, char *spoofed_name);
-            #endif
+          # fs/proc/task_mmu.c: Samsung's 4.9 tree has the older,
+          # simpler show_map_vma() layout.
+          mmu = Path("fs/proc/task_mmu.c")
+          s = mmu.read_text(encoding="utf-8")
+          if "susfs_open_redirect_spoof_show_map_vma" not in s:
+              anchor = """static void
+          show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
+          {"""
+              externs = """#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+          extern void susfs_sus_kstat_spoof_show_map_vma(struct inode *inode, dev_t *out_dev, unsigned long *out_ino);
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+          extern int susfs_open_redirect_spoof_show_map_vma(struct inode *inode, unsigned long *out_ino, dev_t *out_dev, char *spoofed_name);
+          #endif
 
-            """
-                if anchor not in s:
-                    raise SystemExit("task_mmu.c show_map_vma anchor missing")
-                s=s.replace(anchor,externs+anchor,1)
-            if "spoofed_redirected_name" not in s:
-                old_file="""	if (file) {
-            		struct inode *inode = file_inode(vma->vm_file);
-            		dev = inode->i_sb->s_dev;
-            		ino = inode->i_ino;
-            		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
-            	}"""
-                new_file="""#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-            	char *spoofed_redirected_name = NULL;
-            #endif
+          """
+              if anchor not in s:
+                  raise SystemExit("task_mmu.c show_map_vma anchor missing")
+              s=s.replace(anchor,externs+anchor,1)
+          if "spoofed_redirected_name" not in s:
+              old_file="""	if (file) {
+          		struct inode *inode = file_inode(vma->vm_file);
+          		dev = inode->i_sb->s_dev;
+          		ino = inode->i_ino;
+          		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
+          	}"""
+              new_file="""#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+          	char *spoofed_redirected_name = NULL;
+          #endif
 
-            	if (file) {
-            		struct inode *inode = file_inode(vma->vm_file);
-            #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-            		if (SUSFS_IS_INODE_OPEN_REDIRECT(inode) &&
-            		    !susfs_open_redirect_spoof_show_map_vma(inode, &ino, &dev, spoofed_redirected_name)) {
-            			pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
-            			goto orig_flow;
-            		}
-            #endif
-            #ifdef CONFIG_KSU_SUSFS_SUS_MAP
-            		if (SUSFS_IS_INODE_SUS_MAP(inode))
-            			return;
-            #endif
-            		dev = inode->i_sb->s_dev;
-            		ino = inode->i_ino;
-            		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
-            #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-            		susfs_sus_kstat_spoof_show_map_vma(inode, &dev, &ino);
-            #endif
-            	}"""
-                if old_file not in s:
-                    raise SystemExit("task_mmu.c file block anchor missing")
-                s=s.replace(old_file,new_file,1)
-            if "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\norig_flow:" not in s:
-                marker="""	/* We don't show the stack guard page in /proc/maps */
-            	start = vma->vm_start;"""
-                repl="""	/* We don't show the stack guard page in /proc/maps */
-            #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-            orig_flow:
-            	if (spoofed_redirected_name) {
-            		seq_pad(m, ' ');
-            		seq_puts(m, spoofed_redirected_name);
-            		seq_putc(m, '\\n');
-            		kfree(spoofed_redirected_name);
-            		return;
-            	}
-            #endif
-            	start = vma->vm_start;"""
-                if marker not in s:
-                    raise SystemExit("task_mmu.c output anchor missing")
-                s=s.replace(marker,repl,1)
-            mmu.write_text(s,encoding="utf-8")
+          	if (file) {
+          		struct inode *inode = file_inode(vma->vm_file);
+          #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+          		if (SUSFS_IS_INODE_OPEN_REDIRECT(inode) &&
+          		    !susfs_open_redirect_spoof_show_map_vma(inode, &ino, &dev, spoofed_redirected_name)) {
+          			pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
+          			goto orig_flow;
+          		}
+          #endif
+          #ifdef CONFIG_KSU_SUSFS_SUS_MAP
+          		if (SUSFS_IS_INODE_SUS_MAP(inode))
+          			return;
+          #endif
+          		dev = inode->i_sb->s_dev;
+          		ino = inode->i_ino;
+          		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
+          #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+          		susfs_sus_kstat_spoof_show_map_vma(inode, &dev, &ino);
+          #endif
+          	}"""
+              if old_file not in s:
+                  raise SystemExit("task_mmu.c file block anchor missing")
+              s=s.replace(old_file,new_file,1)
+          if "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\norig_flow:" not in s:
+              marker="""	/* We don't show the stack guard page in /proc/maps */
+          	start = vma->vm_start;"""
+              repl="""	/* We don't show the stack guard page in /proc/maps */
+          #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+          orig_flow:
+          	if (spoofed_redirected_name) {
+          		seq_pad(m, ' ');
+          		seq_puts(m, spoofed_redirected_name);
+          		seq_putc(m, '\\n');
+          		kfree(spoofed_redirected_name);
+          		return;
+          	}
+          #endif
+          	start = vma->vm_start;"""
+              if marker not in s:
+                  raise SystemExit("task_mmu.c output anchor missing")
+              s=s.replace(marker,repl,1)
+          mmu.write_text(s,encoding="utf-8")
 
-            # fs/stat.c: this tree still has the legacy 4.9 getattr ABI.
-            st = Path("fs/stat.c")
-            s = st.read_text(encoding="utf-8")
-            if "susfs_sus_kstat_spoof_generic_fillattr" not in s:
-                inc="#include <asm/unistd.h>\n"
-                addition="""#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-            extern void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat);
-            #endif
+          # fs/stat.c: this tree still has the legacy 4.9 getattr ABI.
+          st = Path("fs/stat.c")
+          s = st.read_text(encoding="utf-8")
+          if "susfs_sus_kstat_spoof_generic_fillattr" not in s:
+              inc="#include <asm/unistd.h>\n"
+              addition="""#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+          extern void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat);
+          #endif
 
-            """
-                s=s.replace(inc,inc+"\n"+addition,1)
-            marker="""	stat->blocks = inode->i_blocks;
-            }"""
-            repl="""	stat->blocks = inode->i_blocks;
-            #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-            	susfs_sus_kstat_spoof_generic_fillattr(inode, stat);
-            #endif
-            }"""
-            if repl not in s:
-                if marker not in s:
-                    raise SystemExit("stat.c generic_fillattr anchor missing")
-                s=s.replace(marker,repl,1)
-            old_get="""	if (inode->i_op->getattr)
-            		return inode->i_op->getattr(path->mnt, path->dentry, stat);
+          """
+              s=s.replace(inc,inc+"\n"+addition,1)
+          marker="""	stat->blocks = inode->i_blocks;
+          }"""
+          repl="""	stat->blocks = inode->i_blocks;
+          #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+          	susfs_sus_kstat_spoof_generic_fillattr(inode, stat);
+          #endif
+          }"""
+          if repl not in s:
+              if marker not in s:
+                  raise SystemExit("stat.c generic_fillattr anchor missing")
+              s=s.replace(marker,repl,1)
+          old_get="""	if (inode->i_op->getattr)
+          		return inode->i_op->getattr(path->mnt, path->dentry, stat);
 
-            	generic_fillattr(inode, stat);"""
-            new_get="""	if (inode->i_op->getattr) {
-            #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-            		int err = inode->i_op->getattr(path->mnt, path->dentry, stat);
-            		if (!err)
-            			susfs_sus_kstat_spoof_generic_fillattr(inode, stat);
-            		return err;
-            #else
-            		return inode->i_op->getattr(path->mnt, path->dentry, stat);
-            #endif
-            	}
+          	generic_fillattr(inode, stat);"""
+          new_get="""	if (inode->i_op->getattr) {
+          #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+          		int err = inode->i_op->getattr(path->mnt, path->dentry, stat);
+          		if (!err)
+          			susfs_sus_kstat_spoof_generic_fillattr(inode, stat);
+          		return err;
+          #else
+          		return inode->i_op->getattr(path->mnt, path->dentry, stat);
+          #endif
+          	}
 
-            	generic_fillattr(inode, stat);"""
-            if new_get not in s:
-                if old_get not in s:
-                    raise SystemExit("stat.c getattr anchor missing")
-                s=s.replace(old_get,new_get,1)
-            st.write_text(s,encoding="utf-8")
+          	generic_fillattr(inode, stat);"""
+          if new_get not in s:
+              if old_get not in s:
+                  raise SystemExit("stat.c getattr anchor missing")
+              s=s.replace(old_get,new_get,1)
+          st.write_text(s,encoding="utf-8")
 
-            # Rejects are only the generic patcher's bookkeeping now.
-            for p in Path(".").rglob("*.rej"):
-                p.unlink()
-            for p in Path(".").rglob("*.orig"):
-                p.unlink()
+          # Rejects are only the generic patcher's bookkeeping now.
+          for p in Path(".").rglob("*.rej"):
+              p.unlink()
+          for p in Path(".").rglob("*.orig"):
+              p.unlink()
           PY
 
           if find . -path './KernelSU' -prune -o \( -name '*.rej' -o -name '*.orig' \) -print | grep -q .; then
