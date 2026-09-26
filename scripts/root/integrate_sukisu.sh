@@ -291,6 +291,84 @@ if bridge_path.is_file():
         bridge_path.write_text("#include <linux/uaccess.h>\n" + bridge_text)
         print("[sukisu] Added linux/uaccess.h to syscall_event_bridge.c for 4.9")
 
+# SukiSU v4.2.0's ARM64 patcher assumes a 4-level page-table API.
+# Linux 4.9 ARM64 in this kernel uses pgd -> pud -> pmd -> pte.
+patch_memory = kernel_dir / "hook" / "arm64" / "patch_memory.c"
+if patch_memory.is_file():
+    pm = patch_memory.read_text()
+    fn_start = pm.find("unsigned long phys_from_virt(unsigned long addr, int *err)")
+    fn_end = pm.find("// This function appears in 5.14:", fn_start)
+    if fn_start < 0 or fn_end < 0:
+        raise SystemExit("SukiSU patch_memory phys_from_virt boundaries not found")
+    compat_fn = r"""#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+unsigned long phys_from_virt(unsigned long addr, int *err)
+{
+    struct mm_struct *mm = &init_mm;
+    pgd_t *pgd;
+    pud_t *pud;
+    pmd_t *pmd;
+    pte_t *pte;
+
+    *err = 0;
+
+    pgd = pgd_offset(mm, addr);
+    if (pgd_none(*pgd) || pgd_bad(*pgd))
+        goto fail;
+
+    pud = pud_offset(pgd, addr);
+    if (pud_none(*pud) || pud_bad(*pud))
+        goto fail;
+
+    if (pud_sect(*pud))
+        return ((unsigned long)pud_pfn(*pud) << PAGE_SHIFT) + (addr & ~PUD_MASK);
+
+    pmd = pmd_offset(pud, addr);
+    if (pmd_none(*pmd) || pmd_bad(*pmd))
+        goto fail;
+
+    if (pmd_sect(*pmd))
+        return ((unsigned long)pmd_pfn(*pmd) << PAGE_SHIFT) + (addr & ~PMD_MASK);
+
+    pte = pte_offset_kernel(pmd, addr);
+    if (!pte || !pte_present(*pte))
+        goto fail;
+
+    return ((unsigned long)pte_pfn(*pte) << PAGE_SHIFT) + (addr & ~PAGE_MASK);
+
+fail:
+    *err = -ENOENT;
+    return 0;
+}
+#else
+""";
+    # Keep upstream implementation but close the version guard immediately
+    # before the next function marker.
+    pm = pm[:fn_start] + compat_fn + pm[fn_end:]
+    pm = pm.replace("    ret = (int)copy_to_kernel_nofault(map, src, len);",
+                    "    memcpy(map, src, len);\n    ret = 0;", 1)
+    cache_start = pm.find("#if KSU_NEW_DCACHE_FLUSH")
+    cache_end = pm.find("struct patch_text_info", cache_start)
+    if cache_start < 0 or cache_end < 0:
+        raise SystemExit("SukiSU patch_memory cache macro block not found")
+    cache_block = r"""#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+#define ksu_flush_dcache(start, sz) __flush_dcache_area((void *)start, sz)
+#define ksu_flush_icache(start, end) flush_icache_range(start, end)
+#else
+#if KSU_NEW_DCACHE_FLUSH
+#define ksu_flush_dcache(start, sz)                                                                                        ({                                                                                                                         unsigned long __start = (start);                                                                                       unsigned long __end = __start + (sz);                                                                                  dcache_clean_inval_poc(__start, __end);                                                                            })
+#define ksu_flush_icache(start, end) caches_clean_inval_pou
+#else
+#define ksu_flush_dcache(start, sz) __flush_dcache_area((void *)start, sz)
+#define ksu_flush_icache(start, end) __flush_icache_range
+#endif
+#endif
+
+"""
+    pm = pm[:cache_start] + cache_block + pm[cache_end:]
+    patch_memory.write_text(pm)
+    print("[sukisu] Applied Linux 4.9 ARM64 3-level patch_memory compatibility");
+
+
 
 # Linux 4.9 compatibility checks for the transformed tree.
 import re
