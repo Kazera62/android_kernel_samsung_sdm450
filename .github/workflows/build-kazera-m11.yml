@@ -339,27 +339,36 @@ jobs:
               s = s.replace(marker, marker + addition, 1)
               const_open.write_text(s, encoding="utf-8")
 
-          # fs/namespace.c: preserve the Samsung fslog include while adding
-          # the SUS_MOUNT declarations from the v2.1.0 patch.
+          # fs/namespace.c: Samsung's tree may already contain SUSFS references
+          # from partially applied generic hunks. Check exact declarations,
+          # not the symbol name globally, so missing top-of-file context is
+          # still repaired.
           ns = Path("fs/namespace.c")
           s = ns.read_text(encoding="utf-8")
-          if "susfs_is_current_ksu_domain" not in s:
-              marker = "#include <linux/task_work.h>\n"
-              addition = """#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          marker = "#include <linux/task_work.h>\n"
+          include_add = """#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
           #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 
-          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          """
+          if "#include <linux/susfs_def.h>" not in s:
+              if marker not in s:
+                  raise SystemExit("namespace.c include anchor missing")
+              s = s.replace(marker, marker + include_add, 1)
+          decl_marker = "#include <linux/susfs_def.h>\n"
+          decl_add = """#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           extern bool susfs_is_current_ksu_domain(void);
           extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;
           #define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */
           #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 
           """
-              if marker not in s:
-                  raise SystemExit("namespace.c include anchor missing")
-              s = s.replace(marker, marker + addition, 1)
-              ns.write_text(s, encoding="utf-8")
+          if "extern bool susfs_is_current_ksu_domain(void);" not in s:
+              if decl_marker not in s:
+                  raise SystemExit("namespace.c SUSFS declaration anchor missing")
+              s = s.replace(decl_marker, decl_marker + decl_add, 1)
+          ns.write_text(s, encoding="utf-8")
+
 
           # fs/proc/cmdline.c: this kernel uses saved_command_line instead
           # of the newer proc_command_line path.
