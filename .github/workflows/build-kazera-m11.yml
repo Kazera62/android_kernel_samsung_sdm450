@@ -283,7 +283,7 @@ jobs:
 
           # On this Android 4.9 tree current_sid() is not exported. Add the
           # compatibility helper after objsec.h so task_security_struct is complete.
-          const ksu = Path("KernelSU/kernel/ksu.c")
+          ksu = Path("KernelSU/kernel/ksu.c")
           s = ksu.read_text(encoding="utf-8")
           if "static inline u32 current_sid(void)" not in s:
               marker = '#include "objsec.h"\n'
