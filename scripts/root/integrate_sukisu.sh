@@ -574,15 +574,22 @@ if su_mount_ns.is_file():
     updated = source
     updated = updated.replace("#include <uapi/linux/mount.h>\n", "")
     updated = updated.replace("extern int path_mount(const char *dev_name, struct path *path, const char *type_page, unsigned long flags,\n                      void *data_page);", "extern long do_mount(const char *dev_name, const char __user *dir_name, const char *type_page, unsigned long flags, void *data_page);\nextern long sys_setns(int fd, int nstype);\nextern long sys_unshare(unsigned long unshare_flags);")
-    old_setns = '''extern long __arm64_sys_setns(const struct pt_regs *regs);\n#elif defined(__x86_64__)\nextern long __x64_sys_setns(const struct pt_regs *regs);\n#endif'''
-    new_setns = '''extern long sys_setns(int fd, int nstype);\n#endif'''
+    old_setns = '''extern long __arm64_sys_setns(const struct pt_regs *regs);
+#elif defined(__x86_64__)
+extern long __x64_sys_setns(const struct pt_regs *regs);
+#endif'''
+    new_setns = '''extern long sys_setns(int fd, int nstype);
+#endif'''
     if old_setns in updated:
         updated = updated.replace(old_setns, new_setns, 1)
     start = updated.find("static long ksu_sys_setns(int fd, int flags)\n{")
     end = updated.find("\n}\n\n// global mode", start)
     if start < 0 or end < 0:
         raise SystemExit("SukiSU su_mount_ns ksu_sys_setns boundaries not found")
-    compat_setns = '''static long ksu_sys_setns(int fd, int flags)\n{\n    return sys_setns(fd, flags);\n}'''
+    compat_setns = '''static long ksu_sys_setns(int fd, int flags)
+{
+    return sys_setns(fd, flags);
+}'''
 
     updated = updated[:start] + compat_setns + updated[end+2:]
     updated = updated.replace("int pm_ret = path_mount(NULL, &root_path, NULL, MS_PRIVATE | MS_REC, NULL);", "mm_segment_t old_fs = get_fs();\n    set_fs(KERNEL_DS);\n    int pm_ret = do_mount(NULL, (const char __user *)\"/\", NULL, MS_PRIVATE | MS_REC, NULL);\n    set_fs(old_fs);")
@@ -603,23 +610,97 @@ if pkg_observer.is_file():
     end = updated.find("\n}\n\nstatic const struct fsnotify_ops ksu_ops", start)
     if start < 0 or end < 0:
         raise SystemExit("SukiSU pkg_observer handler boundaries not found")
-    handler = '''static int ksu_handle_inode_event(struct fsnotify_group *group,\n                                  struct inode *inode,\n                                  struct fsnotify_mark *inode_mark,\n                                  struct fsnotify_mark *vfsmount_mark,\n                                  u32 mask, void *data, int data_type,\n                                  const unsigned char *file_name, u32 cookie)\n{\n    (void)group;\n    (void)inode;\n    (void)inode_mark;\n    (void)vfsmount_mark;\n    (void)data;\n    (void)data_type;\n    (void)cookie;\n\n    if (!file_name)\n        return 0;\n    if (mask & FS_ISDIR)\n        return 0;\n    if (strlen(file_name) == 13 && !memcmp(file_name, "packages.list", 13)) {\n        pr_info("packages.list detected: %d\\n", mask);\n        track_throne(false);\n    }\n    return 0;\n}'''
+    handler = '''static int ksu_handle_inode_event(struct fsnotify_group *group,
+                                  struct inode *inode,
+                                  struct fsnotify_mark *inode_mark,
+                                  struct fsnotify_mark *vfsmount_mark,
+                                  u32 mask, void *data, int data_type,
+                                  const unsigned char *file_name, u32 cookie)
+{
+    (void)group;
+    (void)inode;
+    (void)inode_mark;
+    (void)vfsmount_mark;
+    (void)data;
+    (void)data_type;
+    (void)cookie;
+
+    if (!file_name)
+        return 0;
+    if (mask & FS_ISDIR)
+        return 0;
+    if (strlen((const char *)file_name) == 13 && !memcmp(file_name, "packages.list", 13)) {
+        pr_info("packages.list detected: %d\\n", mask);
+        track_throne(false);
+    }
+    return 0;
+}'''
 
     updated = updated[:start] + handler + updated[end+2:]
-    old_ops = '''static const struct fsnotify_ops ksu_ops = {\n    .handle_inode_event = ksu_handle_inode_event,\n};'''
+    old_ops = '''static const struct fsnotify_ops ksu_ops = {
+    .handle_inode_event = ksu_handle_inode_event,
+};'''
 
-    new_ops = '''static const struct fsnotify_ops ksu_ops = {\n    .handle_event = ksu_handle_inode_event,\n};'''
+    new_ops = '''static const struct fsnotify_ops ksu_ops = {
+    .handle_event = ksu_handle_inode_event,
+};'''
 
     if old_ops in updated:
         updated = updated.replace(old_ops, new_ops, 1)
-    old_mark = '''static int add_mark_on_inode(struct inode *inode, u32 mask, struct fsnotify_mark **out)\n{\n    struct fsnotify_mark *m;\n\n    m = kzalloc(sizeof(*m), GFP_KERNEL);\n    if (!m)\n        return -ENOMEM;\n\n    fsnotify_init_mark(m, g);\n    m->mask = mask;\n\n    if (fsnotify_add_inode_mark(m, inode, 0)) {\n        fsnotify_put_mark(m);\n        return -EINVAL;\n    }\n    *out = m;\n    return 0;\n}'''
+    old_mark = '''static int add_mark_on_inode(struct inode *inode, u32 mask, struct fsnotify_mark **out)
+{
+    struct fsnotify_mark *m;
 
-    new_mark = '''static void ksu_free_mark(struct fsnotify_mark *mark)\n{\n    kfree(mark);\n}\n\nstatic int add_mark_on_inode(struct inode *inode, u32 mask, struct fsnotify_mark **out)\n{\n    struct fsnotify_mark *m;\n    int ret;\n\n    m = kzalloc(sizeof(*m), GFP_KERNEL);\n    if (!m)\n        return -ENOMEM;\n\n    fsnotify_init_mark(m, ksu_free_mark);\n    m->mask = mask;\n\n    ret = fsnotify_add_mark(m, g, inode, NULL, 0);\n    if (ret) {\n        fsnotify_destroy_mark(m, g);\n        fsnotify_put_mark(m);\n        return ret;\n    }\n    *out = m;\n    return 0;\n}'''
+    m = kzalloc(sizeof(*m), GFP_KERNEL);
+    if (!m)
+        return -ENOMEM;
+
+    fsnotify_init_mark(m, g);
+    m->mask = mask;
+
+    if (fsnotify_add_inode_mark(m, inode, 0)) {
+        fsnotify_put_mark(m);
+        return -EINVAL;
+    }
+    *out = m;
+    return 0;
+}'''
+
+    new_mark = '''static void ksu_free_mark(struct fsnotify_mark *mark)
+{
+    kfree(mark);
+}
+
+static int add_mark_on_inode(struct inode *inode, u32 mask, struct fsnotify_mark **out)
+{
+    struct fsnotify_mark *m;
+    int ret;
+
+    m = kzalloc(sizeof(*m), GFP_KERNEL);
+    if (!m)
+        return -ENOMEM;
+
+    fsnotify_init_mark(m, ksu_free_mark);
+    m->mask = mask;
+
+    ret = fsnotify_add_mark(m, g, inode, NULL, 0);
+    if (ret) {
+        fsnotify_destroy_mark(m, g);
+        fsnotify_put_mark(m);
+        return ret;
+    }
+    *out = m;
+    return 0;
+}'''
 
     if old_mark not in updated:
         raise SystemExit("SukiSU pkg_observer mark helper pattern not found")
     updated = updated.replace(old_mark, new_mark, 1)
-    old_alloc = '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)\n    g = fsnotify_alloc_group(&ksu_ops, 0);\n#else\n    g = fsnotify_alloc_group(&ksu_ops);\n#endif'''
+    old_alloc = '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    g = fsnotify_alloc_group(&ksu_ops, 0);
+#else
+    g = fsnotify_alloc_group(&ksu_ops);
+#endif'''
 
     new_alloc = '''g = fsnotify_alloc_group(&ksu_ops);'''
 
