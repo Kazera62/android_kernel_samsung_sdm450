@@ -322,6 +322,136 @@ jobs:
           # current_sid() is added below in ksu.c after SELinux objsec.h is included.
           PY
 
+          # Samsung 4.9 non-GKI requires real manual hooks. The SukiSU
+          # compatibility bridge only fixes link symbols; these calls connect
+          # the kernel VFS/syscall paths to SukiSU's handlers.
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def once(path, old, new, label):
+              p = Path(path)
+              s = p.read_text(encoding='utf-8')
+              if new in s:
+                  return
+              if old not in s:
+                  raise SystemExit(f'manual hook anchor missing: {label}')
+              p.write_text(s.replace(old, new, 1), encoding='utf-8')
+
+          # fs/exec.c: invoke SukiSU before the real exec path.
+          once('fs/exec.c',
+               '''static int do_execveat_common(int fd, struct filename *filename,
+              struct user_arg_ptr argv,
+              struct user_arg_ptr envp,
+              int flags)''',
+               '''#ifdef CONFIG_KSU
+          extern bool ksu_execveat_hook __read_mostly;
+          extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);
+          extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);
+          #endif
+
+          static int do_execveat_common(int fd, struct filename *filename,
+              struct user_arg_ptr argv,
+              struct user_arg_ptr envp,
+              int flags)''',
+               'execve declaration anchor', 'fs/exec.c')
+          once('fs/exec.c',
+               '''{
+          \tchar *pathbuf = NULL;
+          \tstruct linux_binprm *bprm;''',
+               '''{
+          #ifdef CONFIG_KSU
+              if (unlikely(ksu_execveat_hook))
+                  ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
+              else
+                  ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);
+          #endif
+              char *pathbuf = NULL;
+              struct linux_binprm *bprm;''',
+               'execve call anchor', 'fs/exec.c')
+
+          # fs/open.c: Samsung 4.9 uses SYSCALL_DEFINE3(faccessat).
+          once('fs/open.c',
+               '''SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+          {''',
+               '''#ifdef CONFIG_KSU
+          extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *flags);
+          #endif
+
+          SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+          {
+          #ifdef CONFIG_KSU
+              ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
+          #endif''',
+               'faccessat hook anchor', 'fs/open.c')
+
+          # fs/read_write.c: vfs_read is the 4.9 manual hook target.
+          once('fs/read_write.c',
+               '''ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
+          {
+          \tssize_t ret;''',
+               '''#ifdef CONFIG_KSU
+          extern bool ksu_vfs_read_hook __read_mostly;
+          extern int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr, size_t *count_ptr, loff_t **pos);
+          #endif
+
+          ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
+          {
+          #ifdef CONFIG_KSU
+              if (unlikely(ksu_vfs_read_hook))
+                  ksu_handle_vfs_read(&file, &buf, &count, &pos);
+          #endif
+              ssize_t ret;''',
+               'vfs_read hook anchor', 'fs/read_write.c')
+
+          # fs/stat.c: this tree has vfs_fstatat rather than vfs_statx.
+          once('fs/stat.c',
+               '''int vfs_fstatat(int dfd, const char __user *filename, struct kstat *stat,
+              int flag)
+          {''',
+               '''#ifdef CONFIG_KSU
+          extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
+          #endif
+
+          int vfs_fstatat(int dfd, const char __user *filename, struct kstat *stat,
+              int flag)
+          {
+          #ifdef CONFIG_KSU
+              ksu_handle_stat(&dfd, &filename, &flag);
+          #endif''',
+               'fstatat hook anchor', 'fs/stat.c')
+
+          # kernel/reboot.c: SukiSU/SUSFS uses reboot(2) as the
+          # userspace->kernel driver-FD installation path.
+          once('kernel/reboot.c',
+               '''#include <linux/reboot.h>
+          ''',
+               '''#include <linux/reboot.h>
+          #ifdef CONFIG_KSU_SUSFS
+          #define KSU_INSTALL_MAGIC1 0xDEADBEEF
+          #define KSU_INSTALL_MAGIC2 0xCAFEBABE
+          extern int ksu_supercall_reboot_handler(void __user **arg);
+          #endif
+          ''',
+               'reboot includes', 'kernel/reboot.c')
+          once('kernel/reboot.c',
+               '''SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
+              void __user *, arg)
+          {''',
+               '''SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
+              void __user *, arg)
+          {
+          #ifdef CONFIG_KSU_SUSFS
+              if (magic1 == KSU_INSTALL_MAGIC1 && magic2 == KSU_INSTALL_MAGIC2)
+                  return ksu_supercall_reboot_handler(&arg);
+          #endif''',
+               'reboot supercall anchor', 'kernel/reboot.c')
+          PY
+
+          grep -Fq 'ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags)' fs/exec.c
+          grep -Fq 'ksu_handle_faccessat(&dfd, &filename, &mode, NULL)' fs/open.c
+          grep -Fq 'ksu_handle_vfs_read(&file, &buf, &count, &pos)' fs/read_write.c
+          grep -Fq 'ksu_handle_stat(&dfd, &filename, &flag)' fs/stat.c
+          grep -Fq 'ksu_supercall_reboot_handler(&arg)' kernel/reboot.c
           # SukiSU manual-hook compatibility bridge for this Samsung 4.9 tree.
           cat > KernelSU/kernel/sukisu_fix.c <<'EOF'
           #include <linux/kernel.h>
