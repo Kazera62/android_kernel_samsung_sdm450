@@ -1000,6 +1000,18 @@ static inline unsigned long current_user_stack_pointer(void)
             print(f"[sukisu] Added Linux 4.9 current_user_stack_pointer shim: {sucompat}")
 
 
+# Linux 4.9 sulog header compatibility.
+# Linux 4.9 has no linux/minmax.h; min()/min_t() are provided by linux/kernel.h.
+sulog_event = kernel_dir / "sulog" / "event.c"
+if sulog_event.is_file():
+    source = sulog_event.read_text()
+    updated = source.replace("#include <linux/minmax.h>\n", "#include <linux/kernel.h>\n", 1)
+    if "#include <linux/minmax.h>" in updated:
+        raise SystemExit("SukiSU sulog event still references unavailable linux/minmax.h")
+    if updated != source:
+        sulog_event.write_text(updated)
+    print("[sukisu] Applied Linux 4.9 sulog header compatibility")
+
 # Linux 4.9 SELinux compatibility.
 # The pinned SukiSU source targets newer LSM wrappers and the selinux_state
 # object. Vendor Linux 4.9 exposes SELinux credentials as cred->security,
