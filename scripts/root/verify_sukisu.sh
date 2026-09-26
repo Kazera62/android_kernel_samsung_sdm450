@@ -109,6 +109,12 @@ if grep -RqsE '(^|[^A-Za-z0-9_])kernel_write\\(' "$KSU_DIR"; then
   die "raw kernel_write() call remains in SukiSU tree"
 fi
 
+if grep -RqsF 'TWA_RESUME' "$KSU_DIR"; then
+  die "Linux 4.9 SukiSU tree still references TWA_RESUME"
+fi
+grep -Fq 'task_work_add(tsk, cb, true)' "$KSU_DIR/policy/allowlist.c" || die "Linux 4.9 allowlist task_work adapter missing"
+grep -Fq 'task_work_add(current, &tw->cb, true)' "$KSU_DIR/supercall/supercall.c" || die "Linux 4.9 supercall task_work adapter missing"
+
 test -f "$KSU_DIR/infra/event_queue.h" || die "SukiSU event_queue.h missing"
 test -f "$KSU_DIR/infra/event_queue.c" || die "SukiSU event_queue.c missing"
 grep -Fq 'unsigned int ksu_event_queue_poll' "$KSU_DIR/infra/event_queue.h" || die "Linux 4.9 event_queue poll prototype not adapted"
