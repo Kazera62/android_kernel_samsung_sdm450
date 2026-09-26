@@ -448,12 +448,12 @@ jobs:
           import re
           s = re.sub(r'^[ \t]*char \*spoofed_redirected_name = NULL;\n', '', s, flags=re.M)
           func_anchor = """	const char *name = NULL;
-"""
+          """
           func_decl = """	const char *name = NULL;
           #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
           char *spoofed_redirected_name = NULL;
           #endif
-"""
+          """
           if func_decl not in s:
               if func_anchor not in s:
                   raise SystemExit("task_mmu.c function-scope anchor missing")
@@ -493,7 +493,7 @@ jobs:
 
           if "orig_flow:" not in s:
               marker="""	/* We don't show the stack guard page in /proc/maps */
-"""
+          """
               repl="""	/* We don't show the stack guard page in /proc/maps */
           #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
           orig_flow:
@@ -505,7 +505,7 @@ jobs:
           		return;
           	}
           #endif
-"""
+          """
               if marker not in s:
                   raise SystemExit("task_mmu.c output anchor missing")
               s=s.replace(marker,repl,1)
