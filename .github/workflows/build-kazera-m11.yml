@@ -1,3 +1,202 @@
+name: Build Kazera M11/A11 Kernel
+
+on:
+  push:
+    branches:
+      - lineage-20
+      - Kazera-OC
+  pull_request:
+    branches:
+      - lineage-20
+      - Kazera-OC
+  workflow_dispatch:
+    inputs:
+      kernel_name:
+        description: "Nama kernel pada perangkat dan file ZIP."
+        type: string
+        required: true
+        default: "Kazera M11/A11"
+      telegram:
+        description: "Kirim ZIP AnyKernel3 hasil build ke Telegram."
+        type: choice
+        required: true
+        default: "off"
+        options:
+          - "off"
+          - "on"
+      root:
+        description: "Pilih varian root kernel."
+        type: choice
+        required: true
+        default: "sukisu-susfs"
+        options:
+          - none
+          - sukisu-ultra
+          - sukisu-susfs
+      clang:
+        description: "Pilih Android Clang toolchain untuk kompilasi kernel."
+        type: choice
+        required: true
+        default: r416183b
+        options:
+          - r383902b
+          - r416183b
+          - r370808
+          - r365631c
+      performance_profile:
+        description: "Pilih preset scheduler, preemption, boost, dan WALT kernel."
+        type: choice
+        required: true
+        default: performance
+        options:
+          - stock
+          - performance
+          - balanced
+          - latency
+      hz:
+        description: "Atur frekuensi timer kernel."
+        type: choice
+        required: true
+        default: 1000
+        options:
+          - 100
+          - 250
+          - 300
+          - 1000
+      cpu_governor:
+        description: "Pilih CPU frequency governor default."
+        type: choice
+        required: true
+        default: performance
+        options:
+          - performance
+          - schedutil
+          - interactive
+          - ondemand
+          - stock
+      io_scheduler:
+        description: "Pilih block I/O scheduler default."
+        type: choice
+        required: true
+        default: cfq
+        options:
+          - cfq
+          - noop
+          - deadline
+          - stock
+      tcp_congestion:
+        description: "Pilih TCP congestion control default."
+        type: choice
+        required: true
+        default: bbr
+        options:
+          - bbr
+          - cubic
+          - stock
+      zram_writeback:
+        description: "Aktifkan zRAM writeback ke storage."
+        type: choice
+        required: true
+        default: "on"
+        options:
+          - "on"
+          - "off"
+      cortex_a53_tune:
+        description: "Aktifkan compiler tuning untuk Cortex-A53."
+        type: choice
+        required: true
+        default: "on"
+        options:
+          - "on"
+          - "off"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-kazera-m11-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KERNEL_NAME_INPUT: ${{ inputs.kernel_name || 'Kazera M11/A11' }}
+  TELEGRAM_ENABLE: ${{ inputs.telegram || 'off' }}
+  ROOT_IMPL: ${{ inputs.root || 'sukisu-susfs' }}
+  SUKISU_VERSION: v4.1.2
+  SUKISU_BRANCH: builtin
+  SUKISU_REF: f96f6cd234ed0c774161027db764b44127691832
+  SUKISU_FIXED_REF: ba66ae7bd16859d7bce487e3d60afa9692528ed1
+  SUSFS_VERSION: v2.1.0
+  SUSFS_PATCH_REF: 5404a6864ba87efcb15d528c0d68f201d993dac2
+  PATCHES_REPO: https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd
+  CLANG_VERSION: ${{ inputs.clang || 'r416183b' }}
+  PERF_PROFILE: ${{ inputs.performance_profile || 'performance' }}
+  HZ_CHOICE: ${{ inputs.hz || '1000' }}
+  CPU_GOV: ${{ inputs.cpu_governor || 'performance' }}
+  IO_SCHED: ${{ inputs.io_scheduler || 'cfq' }}
+  TCP_CONG: ${{ inputs.tcp_congestion || 'bbr' }}
+  ZRAM_WB: ${{ inputs.zram_writeback || 'on' }}
+  CORTEX_TUNE: ${{ inputs.cortex_a53_tune || 'on' }}
+  ANYKERNEL3_REPO: https://github.com/Kazera62/AnyKernel3.git
+  ANYKERNEL3_REF: 0ab72a279369da34644860a256eba3f2e8142dad
+  ARCH: arm64
+  SUBARCH: arm64
+  CC: clang
+  LD: aarch64-linux-gnu-ld
+  CLANG_TRIPLE: aarch64-linux-gnu-
+  CROSS_COMPILE: aarch64-linux-gnu-
+  CROSS_COMPILE_ARM32: arm-linux-gnueabi-
+
+jobs:
+  build-kernel:
+    name: "Build Kazera M11/A11"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex git curl rsync \
+            libelf-dev libssl-dev device-tree-compiler cpio gzip patch \
+            binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi zip unzip
+
+      - name: Select and install Clang toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+          case "$CLANG_VERSION" in
+            r383902b|r370808|r365631c)
+              CLANG_BRANCH="android11-qpr3-release"
+              ;;
+            r416183b)
+              CLANG_BRANCH="android12-qpr3-s1-release"
+              ;;
+            *)
+              echo "Unsupported Clang: $CLANG_VERSION" >&2
+              exit 1
+              ;;
+          esac
+          TOOLCHAIN_ROOT="$HOME/clang-$CLANG_VERSION"
+          rm -rf "$TOOLCHAIN_ROOT" clang-toolchain
+          if ! git clone --depth=1 --filter=blob:none --sparse --branch "$CLANG_BRANCH" https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-toolchain; then
+            rm -rf clang-toolchain
+            git clone --depth=1 --sparse --branch "$CLANG_BRANCH" https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-toolchain
+          fi
+          CLANG_DIR="clang-$CLANG_VERSION"
+          git -C clang-toolchain sparse-checkout set "$CLANG_DIR"
+          test -x "clang-toolchain/$CLANG_DIR/bin/clang"
+          mv "clang-toolchain/$CLANG_DIR" "$TOOLCHAIN_ROOT"
+          rm -rf clang-toolchain
+          export PATH="$TOOLCHAIN_ROOT/bin:$PATH"
           echo "$TOOLCHAIN_ROOT/bin" >> "$GITHUB_PATH"
           hash -r
           command -v clang
@@ -59,3 +258,546 @@
           #define fallthrough __attribute__((__fallthrough__))
           #else
           #define fallthrough do { } while (0) /* fallthrough */
+          #endif
+          '''
+              s = s[:pos] + "\n" + addition.strip("\n") + s[pos:]
+              compat.write_text(s, encoding="utf-8")
+
+          replace_once(
+              "KernelSU/kernel/policy/allowlist.c",
+              "#define FILE_MAGIC 0x7f4b5355 // ' KSU', u32",
+              "#include \"infra/kernel_compat.h\"\n\n#define FILE_MAGIC 0x7f4b5355 // ' KSU', u32",
+          )
+
+          replace_once(
+              "KernelSU/kernel/sulog/event.c",
+              "strncpy_from_user_nofault(arg, (const void __user *)untagged_addr((unsigned long)arg_user), sizeof(arg));",
+              "ksu_strncpy_from_user_nofault(arg, (const void __user *)untagged_addr((unsigned long)arg_user), sizeof(arg));",
+          )
+
+          replace_once(
+              "KernelSU/kernel/sulog/event.c",
+              "#define USER_ARG_NULL ((struct user_arg_ptr){ 0 })",
+              "#define USER_ARG_NULL (&(struct user_arg_ptr){ 0 })",
+          )
+          PY
+
+          grep -Fq '#define fallthrough' KernelSU/kernel/infra/kernel_compat.h
+          grep -Fq '#include "infra/kernel_compat.h"' KernelSU/kernel/policy/allowlist.c
+          grep -Fq 'ksu_strncpy_from_user_nofault(arg' KernelSU/kernel/sulog/event.c
+          grep -Fq '#define USER_ARG_NULL (&(struct user_arg_ptr){ 0 })' KernelSU/kernel/sulog/event.c
+          git -C KernelSU diff --check
+
+          rm -rf drivers/kernelsu
+          ln -s ../KernelSU/kernel drivers/kernelsu
+
+          grep -Fq 'obj-$(CONFIG_KSU) += kernelsu/' drivers/Makefile || \
+            printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -Fq 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || \
+            sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+
+          test -L drivers/kernelsu
+          test "$(readlink drivers/kernelsu)" = "../KernelSU/kernel"
+
+          if [ "$ROOT_IMPL" = "sukisu-susfs" ]; then
+            curl -fsSL "$PATCHES_REPO/$SUSFS_PATCH_REF/Patches/Patch/susfs_patch_to_4.9.patch" \
+              -o .ci-patches/susfs_patch_to_4.9.patch
+            test -s .ci-patches/susfs_patch_to_4.9.patch
+            grep -Fq '+#define SUSFS_VERSION "v2.1.0"' .ci-patches/susfs_patch_to_4.9.patch
+
+            patch -p1 --forward --batch < .ci-patches/susfs_patch_to_4.9.patch
+
+            if find . -path './KernelSU' -prune -o \( -name '*.rej' -o -name '*.orig' \) -print | grep -q .; then
+              echo "SUSFS patch left reject/original files." >&2
+              find . -path './KernelSU' -prune -o \( -name '*.rej' -o -name '*.orig' \) -print >&2
+              exit 1
+            fi
+
+            test -f include/linux/susfs.h
+            grep -Fq '#define SUSFS_VERSION "v2.1.0"' include/linux/susfs.h
+            grep -Fq 'config KSU_SUSFS' KernelSU/kernel/Kconfig
+          elif [ "$ROOT_IMPL" != "sukisu-ultra" ]; then
+            echo "Unsupported root implementation: $ROOT_IMPL" >&2
+            exit 1
+          fi
+
+          printf 'root_impl=%s\n' "$ROOT_IMPL" >> "$GITHUB_ENV"
+          printf 'sukisu_ref=%s\n' "$SUKISU_REF" >> "$GITHUB_ENV"
+          printf 'susfs_ref=%s\n' "${SUSFS_PATCH_REF:-n/a}" >> "$GITHUB_ENV"
+          echo "[root] Integration completed successfully."
+      - name: Validate kernel feature support
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          grep -Fq 'config HZ_100' kernel/Kconfig.hz
+          grep -Fq 'config HZ_250' kernel/Kconfig.hz
+          grep -Fq 'config HZ_300' kernel/Kconfig.hz
+          grep -Fq 'config HZ_1000' kernel/Kconfig.hz
+          grep -Fq 'config PREEMPT_NONE' kernel/Kconfig.preempt
+          grep -Fq 'config PREEMPT_VOLUNTARY' kernel/Kconfig.preempt
+          grep -Fq 'config PREEMPT' kernel/Kconfig.preempt
+          grep -Fq 'config CPU_FREQ_GOV_PERFORMANCE' drivers/cpufreq/Kconfig
+          grep -Fq 'config CPU_FREQ_GOV_SCHEDUTIL' drivers/cpufreq/Kconfig
+          grep -Fq 'config CPU_FREQ_GOV_INTERACTIVE' drivers/cpufreq/Kconfig
+          grep -Fq 'config CPU_FREQ_GOV_ONDEMAND' drivers/cpufreq/Kconfig
+          grep -Fq 'config CPU_BOOST' drivers/cpufreq/Kconfig
+          grep -Fq 'config IOSCHED_CFQ' block/Kconfig.iosched
+          grep -Fq 'config IOSCHED_NOOP' block/Kconfig.iosched
+          grep -Fq 'config IOSCHED_DEADLINE' block/Kconfig.iosched
+          grep -Fq 'config TCP_CONG_BBR' net/ipv4/Kconfig
+          grep -Fq 'config DEFAULT_BBR' net/ipv4/Kconfig
+          grep -Fq 'config DEFAULT_TCP_CONG' net/ipv4/Kconfig
+          grep -Fq 'config ZRAM_WRITEBACK' drivers/block/zram/Kconfig
+          grep -Fq 'config ZRAM_LRU_WRITEBACK' drivers/block/zram/Kconfig
+          grep -Fq 'config SCHED_AUTOGROUP' init/Kconfig
+          grep -Fq 'config SCHED_TUNE' init/Kconfig
+          grep -Fq 'config KAZERA_SCHED_PROFILE_PERFORMANCE' init/Kconfig
+          grep -Fq 'config KAZERA_SCHED_PROFILE_BALANCED' init/Kconfig
+          grep -Fq 'config KAZERA_SCHED_PROFILE_LATENCY' init/Kconfig
+          grep -Fq 'config CC_OPTIMIZE_FOR_PERFORMANCE' init/Kconfig
+          test -s arch/arm64/configs/a11q_open_defconfig
+          test -s arch/arm64/Makefile
+
+          echo 'Kernel feature support checks passed.'
+      - name: Configure kernel
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf out
+
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" a11q_open_defconfig
+
+          KERNEL_NAME_SLUG="$(printf '%s' "$KERNEL_NAME_INPUT" | LC_ALL=C sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
+          [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="Kazera-M11-A11"
+          scripts/config --file out/.config --set-str LOCALVERSION "-$KERNEL_NAME_SLUG"
+          scripts/config --file out/.config --disable LOCALVERSION_AUTO
+          printf 'KERNEL_NAME_SLUG=%s\n' "$KERNEL_NAME_SLUG" >> "$GITHUB_ENV"
+
+          scripts/config --file out/.config --enable ARCH_ZQL1871
+          scripts/config --file out/.config --enable ARCH_SDM450
+          scripts/config --file out/.config --enable ARCH_MSM8953
+
+          for profile in PERFORMANCE BALANCED LATENCY; do
+            scripts/config --file out/.config --disable "KAZERA_SCHED_PROFILE_$profile" || true
+          done
+
+          case "$PERF_PROFILE" in
+            stock)
+              ;;
+            performance)
+              scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
+              scripts/config --file out/.config --enable PREEMPT_NONE
+              scripts/config --file out/.config --enable CPU_BOOST
+              scripts/config --file out/.config --enable SCHED_WALT
+              scripts/config --file out/.config --enable SCHED_TUNE
+              scripts/config --file out/.config --disable SCHED_AUTOGROUP
+              scripts/config --file out/.config --enable KAZERA_SCHED_PROFILE_PERFORMANCE
+              ;;
+            balanced)
+              scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
+              scripts/config --file out/.config --enable PREEMPT_VOLUNTARY
+              scripts/config --file out/.config --enable CPU_BOOST
+              scripts/config --file out/.config --enable SCHED_WALT
+              scripts/config --file out/.config --enable SCHED_TUNE
+              scripts/config --file out/.config --disable SCHED_AUTOGROUP
+              scripts/config --file out/.config --enable KAZERA_SCHED_PROFILE_BALANCED
+              ;;
+            latency)
+              scripts/config --file out/.config --enable CC_OPTIMIZE_FOR_PERFORMANCE
+              scripts/config --file out/.config --enable PREEMPT
+              scripts/config --file out/.config --enable CPU_BOOST
+              scripts/config --file out/.config --enable SCHED_WALT
+              scripts/config --file out/.config --disable SCHED_AUTOGROUP
+              scripts/config --file out/.config --enable SCHED_TUNE
+              scripts/config --file out/.config --enable KAZERA_SCHED_PROFILE_LATENCY
+              ;;
+            *)
+              echo "Unsupported performance profile: $PERF_PROFILE" >&2
+              exit 1
+              ;;
+          esac
+
+          case "$HZ_CHOICE" in
+            100)
+              scripts/config --file out/.config --disable HZ_250 --disable HZ_300 --disable HZ_1000 --enable HZ_100
+              ;;
+            250)
+              scripts/config --file out/.config --disable HZ_100 --disable HZ_300 --disable HZ_1000 --enable HZ_250
+              ;;
+            300)
+              scripts/config --file out/.config --disable HZ_100 --disable HZ_250 --disable HZ_1000 --enable HZ_300
+              ;;
+            1000)
+              scripts/config --file out/.config --disable HZ_100 --disable HZ_250 --disable HZ_300 --enable HZ_1000
+              ;;
+            *)
+              echo "Unsupported HZ: $HZ_CHOICE" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$CPU_GOV" != "stock" ]; then
+            for gov in PERFORMANCE POWERSAVE USERSPACE ONDEMAND CONSERVATIVE SCHEDUTIL INTERACTIVE; do
+              scripts/config --file out/.config --disable "CPU_FREQ_GOV_$gov" || true
+              scripts/config --file out/.config --disable "CPU_FREQ_DEFAULT_GOV_$gov" || true
+            done
+          fi
+
+          case "$CPU_GOV" in
+            performance)
+              scripts/config --file out/.config --enable CPU_FREQ_GOV_PERFORMANCE
+              scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_PERFORMANCE
+              ;;
+            schedutil)
+              scripts/config --file out/.config --enable CPU_FREQ_GOV_SCHEDUTIL
+              scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_SCHEDUTIL
+              ;;
+            interactive)
+              scripts/config --file out/.config --enable CPU_FREQ_GOV_INTERACTIVE
+              scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_INTERACTIVE
+              ;;
+            ondemand)
+              scripts/config --file out/.config --enable CPU_FREQ_GOV_ONDEMAND
+              scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_ONDEMAND
+              ;;
+            stock)
+              ;;
+            *)
+              echo "Unsupported CPU governor: $CPU_GOV" >&2
+              exit 1
+              ;;
+          esac
+
+          case "$IO_SCHED" in
+            cfq)
+              scripts/config --file out/.config --enable IOSCHED_CFQ --disable IOSCHED_NOOP --disable IOSCHED_DEADLINE
+              scripts/config --file out/.config --enable DEFAULT_CFQ --disable DEFAULT_NOOP --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --set-str DEFAULT_IOSCHED cfq
+              ;;
+            noop)
+              scripts/config --file out/.config --enable IOSCHED_NOOP --disable IOSCHED_CFQ --disable IOSCHED_DEADLINE
+              scripts/config --file out/.config --disable DEFAULT_CFQ --enable DEFAULT_NOOP --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --set-str DEFAULT_IOSCHED noop
+              ;;
+            deadline)
+              scripts/config --file out/.config --enable IOSCHED_DEADLINE --disable IOSCHED_CFQ --disable IOSCHED_NOOP
+              scripts/config --file out/.config --disable DEFAULT_CFQ --disable DEFAULT_NOOP --enable DEFAULT_DEADLINE
+              scripts/config --file out/.config --set-str DEFAULT_IOSCHED deadline
+              ;;
+            stock)
+              ;;
+            *)
+              echo "Unsupported I/O scheduler: $IO_SCHED" >&2
+              exit 1
+              ;;
+          esac
+
+          case "$TCP_CONG" in
+            bbr)
+              scripts/config --file out/.config --enable TCP_CONG_ADVANCED --enable TCP_CONG_BBR --enable NET_SCH_FQ --enable DEFAULT_BBR --disable DEFAULT_CUBIC --set-str DEFAULT_TCP_CONG bbr
+              ;;
+            cubic)
+              scripts/config --file out/.config --enable TCP_CONG_ADVANCED --enable TCP_CONG_CUBIC --disable TCP_CONG_BBR --disable DEFAULT_BBR --enable DEFAULT_CUBIC --set-str DEFAULT_TCP_CONG cubic
+              ;;
+            stock)
+              ;;
+            *)
+              echo "Unsupported TCP congestion: $TCP_CONG" >&2
+              exit 1
+              ;;
+          esac
+
+          scripts/config --file out/.config --enable ZRAM
+          if [ "$ZRAM_WB" = "on" ]; then
+            scripts/config --file out/.config --enable ZRAM_WRITEBACK --enable ZRAM_LRU_WRITEBACK
+          else
+            scripts/config --file out/.config --disable ZRAM_WRITEBACK --disable ZRAM_LRU_WRITEBACK
+          fi
+
+          scripts/config --file out/.config --disable PSI
+
+          case "$ROOT_IMPL" in
+            none)
+              scripts/config --file out/.config --disable KSU 2>/dev/null || true
+              scripts/config --file out/.config --disable KSU_MANUAL_HOOK 2>/dev/null || true
+              scripts/config --file out/.config --disable KSU_SUSFS 2>/dev/null || true
+              scripts/config --file out/.config --disable KPM 2>/dev/null || true
+              ;;
+            sukisu-ultra)
+              scripts/config --file out/.config --enable KSU
+              scripts/config --file out/.config --enable KSU_MANUAL_HOOK
+              scripts/config --file out/.config --disable KSU_SUSFS 2>/dev/null || true
+              scripts/config --file out/.config --disable KPM
+              ;;
+            sukisu-susfs)
+              scripts/config --file out/.config --enable THREAD_INFO_IN_TASK
+              scripts/config --file out/.config --enable KSU
+              scripts/config --file out/.config --enable KSU_MANUAL_HOOK
+              scripts/config --file out/.config --enable KSU_SUSFS
+              for susfs_cfg in \
+                KSU_SUSFS_SUS_PATH \
+                KSU_SUSFS_SUS_MOUNT \
+                KSU_SUSFS_SUS_KSTAT \
+                KSU_SUSFS_SPOOF_UNAME \
+                KSU_SUSFS_ENABLE_LOG \
+                KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+                KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+                KSU_SUSFS_OPEN_REDIRECT \
+                KSU_SUSFS_SUS_MAP; do
+                scripts/config --file out/.config --enable "$susfs_cfg"
+              done
+              scripts/config --file out/.config --disable KPM
+              ;;
+            *)
+              echo "Unsupported root implementation: $ROOT_IMPL" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$CORTEX_TUNE" = "on" ]; then
+            KCFLAGS="-mcpu=cortex-a53+crypto"
+          else
+            KCFLAGS=""
+          fi
+          printf "%s\n" "KCFLAGS=$KCFLAGS" > out/kazera-build-env.txt
+
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" olddefconfig
+
+          grep -E "^(CONFIG_KSU=|CONFIG_KSU_MANUAL_HOOK=|CONFIG_KSU_SUSFS=|CONFIG_KSU_SUSFS_SUS_PATH=|CONFIG_KSU_SUSFS_SUS_MOUNT=|CONFIG_KSU_SUSFS_SUS_KSTAT=|CONFIG_KSU_SUSFS_SPOOF_UNAME=|CONFIG_KSU_SUSFS_ENABLE_LOG=|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=|CONFIG_KSU_SUSFS_OPEN_REDIRECT=|CONFIG_KSU_SUSFS_SUS_MAP=|CONFIG_KPM=|CONFIG_KPROBES=|CONFIG_KALLSYMS_ALL=|CONFIG_HZ=|CONFIG_HZ_|CONFIG_CPU_FREQ_DEFAULT_GOV=|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_IOSCHED=|CONFIG_ZRAM_WRITEBACK=|CONFIG_PREEMPT|CONFIG_PSI=|CONFIG_LOCALVERSION=)" out/.config || true
+
+          case "$ROOT_IMPL" in
+            none)
+              test "$(grep -c "^CONFIG_KSU=y$" out/.config || true)" -eq 0
+              test "$(grep -c "^CONFIG_KPM=y$" out/.config || true)" -eq 0
+              ;;
+            sukisu-ultra)
+              test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KSU_MANUAL_HOOK=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KSU_SUSFS=y$" out/.config || true)" -eq 0
+              test "$(grep -c "^CONFIG_KPM=y$" out/.config || true)" -eq 0
+              ;;
+            sukisu-susfs)
+              test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KSU_MANUAL_HOOK=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_THREAD_INFO_IN_TASK=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KSU_SUSFS=y$" out/.config)" -eq 1
+              for susfs_cfg in \
+                CONFIG_KSU_SUSFS_SUS_PATH \
+                CONFIG_KSU_SUSFS_SUS_MOUNT \
+                CONFIG_KSU_SUSFS_SUS_KSTAT \
+                CONFIG_KSU_SUSFS_SPOOF_UNAME \
+                CONFIG_KSU_SUSFS_ENABLE_LOG \
+                CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+                CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+                CONFIG_KSU_SUSFS_OPEN_REDIRECT \
+                CONFIG_KSU_SUSFS_SUS_MAP; do
+                test "$(grep -c "^${susfs_cfg}=y$" out/.config)" -eq 1
+              done
+              test "$(grep -c "^CONFIG_KPM=y$" out/.config || true)" -eq 0
+              test "$(grep -F '#define SUSFS_VERSION \"v2.1.0\"' include/linux/susfs.h | wc -l)" -eq 1
+              ;;
+            *)
+              echo "Unsupported root implementation: $ROOT_IMPL" >&2
+              exit 1
+              ;;
+          esac
+
+          test "$(grep -c "^CONFIG_ARCH_ZQL1871=y$" out/.config)" -eq 1
+          test "$(grep -c "^CONFIG_ARCH_SDM450=y$" out/.config)" -eq 1
+          test "$(grep -c "^CONFIG_ARCH_MSM8953=y$" out/.config)" -eq 1
+
+      - name: Build kernel and DTBs
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          if [ "$CORTEX_TUNE" = "on" ]; then KCFLAGS="-mcpu=cortex-a53+crypto"; else KCFLAGS=""; fi
+
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" CLANG_PREFIX32="--prefix=/usr/bin/arm-linux-gnueabi-" KCFLAGS="$KCFLAGS" dtbs -j"$(nproc)"
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" CLANG_PREFIX32="--prefix=/usr/bin/arm-linux-gnueabi-" KCFLAGS="$KCFLAGS" Image.gz-dtb vmlinux -j"$(nproc)"
+          NM=llvm-nm scripts/mksysmap out/vmlinux out/System.map
+
+          test -s out/arch/arm64/boot/Image.gz
+          test -s out/arch/arm64/boot/Image.gz-dtb
+          test -s out/vmlinux
+          test -s out/System.map
+          test -d out/arch/arm64/boot/dts/samsung
+          test -n "$(find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print -quit)"
+          find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print | sort
+      - name: Prepare AnyKernel3 package input
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf package-input dist .anykernel3
+          mkdir -p package-input dist
+
+          cp out/arch/arm64/boot/Image.gz-dtb package-input/Image.gz-dtb
+
+          {
+            echo "kernel_name=$KERNEL_NAME_INPUT"
+            echo "kernel_name_slug=$KERNEL_NAME_SLUG"
+            echo "root_impl=$ROOT_IMPL"
+            echo "sukisu_version=$SUKISU_VERSION"
+            echo "sukisu_branch=$SUKISU_BRANCH"
+            echo "sukisu_ref=$SUKISU_REF"
+            echo "sukisu_fixed_ref=$SUKISU_FIXED_REF"
+            echo "susfs_version=$SUSFS_VERSION"
+            echo "susfs_patch_ref=$SUSFS_PATCH_REF"
+            echo "clang=$CLANG_VERSION"
+            echo "performance_profile=$PERF_PROFILE"
+            echo "hz=$HZ_CHOICE"
+            echo "cpu_governor=$CPU_GOV"
+            echo "io_scheduler=$IO_SCHED"
+            echo "tcp_congestion=$TCP_CONG"
+            echo "zram_writeback=$ZRAM_WB"
+            echo "cortex_a53_tune=$CORTEX_TUNE"
+            echo "base_config=a11q_open_defconfig"
+            echo "target=Samsung Galaxy M11 / A11 (SDM450)"
+            echo "anykernel3_repo=$ANYKERNEL3_REPO"
+            echo "anykernel3_ref=$ANYKERNEL3_REF"
+            echo "kernel_release=$(make -s O=out kernelrelease)"
+            echo "git_commit=$GITHUB_SHA"
+          } > package-input/KAZERA_BUILD_INFO.txt
+
+          test -s package-input/Image.gz-dtb
+          test -s package-input/KAZERA_BUILD_INFO.txt
+
+      - name: Package AnyKernel3
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          test -s package-input/Image.gz-dtb
+          test -s package-input/KAZERA_BUILD_INFO.txt
+
+          KERNEL_NAME_INPUT="$(sed -n 's/^kernel_name=//p' package-input/KAZERA_BUILD_INFO.txt)"
+          KERNEL_NAME_SLUG="$(sed -n 's/^kernel_name_slug=//p' package-input/KAZERA_BUILD_INFO.txt)"
+          [ -n "$KERNEL_NAME_INPUT" ] || KERNEL_NAME_INPUT="Kazera M11/A11"
+          [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="Kazera-M11-A11"
+
+          git clone --depth=1 "$ANYKERNEL3_REPO" .anykernel3
+          git -C .anykernel3 fetch --depth=1 origin "$ANYKERNEL3_REF"
+          git -C .anykernel3 checkout --detach "$ANYKERNEL3_REF"
+          test "$(git -C .anykernel3 rev-parse HEAD)" = "$ANYKERNEL3_REF"
+
+          test -s .anykernel3/anykernel.sh
+          test -s .anykernel3/tools/ak3-core.sh
+          test -s .anykernel3/META-INF/com/google/android/update-binary
+          test -s .anykernel3/META-INF/com/google/android/updater-script
+          grep -Fq "device.name1=sdm450" .anykernel3/anykernel.sh
+          grep -Fq "device.name2=m11q" .anykernel3/anykernel.sh
+          grep -Fq "device.name3=a11q" .anykernel3/anykernel.sh
+          grep -Fq "BLOCK=/dev/block/by-name/boot" .anykernel3/anykernel.sh
+          grep -Fq "IS_SLOT_DEVICE=0" .anykernel3/anykernel.sh
+          grep -Fq "do.modules=0" .anykernel3/anykernel.sh
+          grep -Fq "do.systemless=0" .anykernel3/anykernel.sh
+          bash -n .anykernel3/anykernel.sh
+
+          cp package-input/Image.gz-dtb .anykernel3/Image.gz-dtb
+          cp package-input/KAZERA_BUILD_INFO.txt .anykernel3/KAZERA_BUILD_INFO.txt
+
+          python3 - <<'PY'
+          import pathlib
+          import re
+
+          path = pathlib.Path('.anykernel3/anykernel.sh')
+          text = path.read_text(encoding='utf-8')
+          info = pathlib.Path('.anykernel3/KAZERA_BUILD_INFO.txt').read_text(encoding='utf-8')
+          match = re.search(r'^kernel_name=(.*)$', info, re.M)
+          kernel_name = (match.group(1).strip() if match else 'Kazera M11/A11')
+          kernel_name = kernel_name.replace(chr(13), ' ').replace(chr(10), ' ').replace(chr(39), '')
+          kernel_name = re.sub(r'\s+', ' ', kernel_name).strip() or 'Kazera M11/A11'
+          text, count = re.subn(r'^kernel\.string=.*$', lambda _: 'kernel.string=' + kernel_name, text, count=1, flags=re.M)
+          if count != 1:
+              raise SystemExit('kernel.string line not found exactly once')
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          test -s .anykernel3/Image.gz-dtb
+          bash -n .anykernel3/anykernel.sh
+
+          zip_path="$GITHUB_WORKSPACE/dist/$KERNEL_NAME_SLUG-AnyKernel3-$GITHUB_RUN_NUMBER.zip"
+          (
+            cd .anykernel3
+            sha256sum Image.gz-dtb anykernel.sh KAZERA_BUILD_INFO.txt > KAZERA_SHA256SUMS
+            zip -r9 "$zip_path" \
+              anykernel.sh \
+              Image.gz-dtb \
+              META-INF \
+              tools \
+              modules \
+              patch \
+              ramdisk \
+              KAZERA_BUILD_INFO.txt \
+              KAZERA_SHA256SUMS
+          )
+
+          test -s "$zip_path"
+          unzip -tq "$zip_path"
+          unzip -l "$zip_path" | grep -q "Image.gz-dtb"
+          unzip -l "$zip_path" | grep -q "anykernel.sh"
+          unzip -l "$zip_path" | grep -q "META-INF/com/google/android/update-binary"
+          unzip -l "$zip_path" | grep -q "tools/ak3-core.sh"
+          if unzip -l "$zip_path" | grep -Eq '(^|/)(README\.md|LICENSE)$|(^|/)\.github/|(^|/)\.git/'; then
+            echo "Unexpected repository-only files found in AnyKernel3 ZIP." >&2
+            exit 1
+          fi
+
+          test "$(find dist -maxdepth 1 -type f -name '*-AnyKernel3-*.zip' | wc -l)" -eq 1
+
+      - name: Upload final AnyKernel3 ZIP
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: kazera-m11-anykernel3-${{ github.run_number }}
+          path: dist/*-AnyKernel3-*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  notify-telegram:
+    name: "Send ZIP to Telegram"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: build-kernel
+    if: needs.build-kernel.result == 'success' && inputs.telegram == 'on'
+
+    steps:
+      - name: Download AnyKernel3 artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: kazera-m11-anykernel3-${{ github.run_number }}
+          path: dist
+
+      - name: Send build ZIP to Telegram
+        shell: bash
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          ZIP_PATH="$(find dist -maxdepth 1 -type f -name '*-AnyKernel3-*.zip' -print -quit)"
+          test -n "$ZIP_PATH"
+          test -s "$ZIP_PATH"
+          test -n "$TELEGRAM_BOT_TOKEN" || { echo "TELEGRAM_BOT_TOKEN secret is missing." >&2; exit 1; }
+          test -n "$TELEGRAM_CHAT_ID" || { echo "TELEGRAM_CHAT_ID secret is missing." >&2; exit 1; }
+
+          FILE_SIZE="$(stat -c '%s' "$ZIP_PATH")"
+          MAX_TELEGRAM_BYTES=50000000
+          if [ "$FILE_SIZE" -gt "$MAX_TELEGRAM_BYTES" ]; then
+            echo "Telegram ZIP is $FILE_SIZE bytes, exceeding Telegram's 50 MB bot upload limit." >&2
+            exit 1
+          fi
+
+
+          CAPTION="$(basename "$ZIP_PATH") | root=$ROOT_IMPL | SukiSU=$SUKISU_VERSION | SUSFS=$SUSFS_VERSION"
+          RESPONSE="$(curl -fsS --retry 3 --retry-all-errors \
+            -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
+            -F "chat_id=$TELEGRAM_CHAT_ID" \
+            -F "document=@$ZIP_PATH;type=application/zip" \
+            -F "caption=$CAPTION")"
+
+          printf '%s\n' "$RESPONSE" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
+            echo "Telegram API did not report success." >&2
+            printf '%s\n' "$RESPONSE" >&2
+            exit 1
+          }
