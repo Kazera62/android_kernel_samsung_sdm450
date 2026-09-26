@@ -690,6 +690,21 @@ for path in kernel_dir.rglob("*.c"):
     if ("ksu_kernel_read(" in source or "ksu_kernel_write(" in source) and '#include "kernel_compat.h"' not in source:
         path.write_text('#include "kernel_compat.h"\n' + source)
 
+# Linux 4.9 task_work compatibility.
+# Linux 4.9 task_work_add() takes a bool notify argument; SukiSU's TWA_RESUME
+# means requesting resume notification, which maps to true on this kernel.
+replaced_twa = 0
+for rel in ("policy/allowlist.c", "supercall/supercall.c"):
+    path = kernel_dir / rel
+    if not path.is_file():
+        continue
+    source = path.read_text()
+    updated = source.replace("TWA_RESUME", "true")
+    if updated != source:
+        path.write_text(updated)
+        replaced_twa += 1
+print(f"[sukisu] Replaced TWA_RESUME with Linux 4.9 task_work notify=true in {replaced_twa} SukiSU source files")
+
 # Linux 4.9 compatibility checks for the transformed tree.
 import re
 raw_nofault = []
