@@ -280,12 +280,27 @@ jobs:
               "#define USER_ARG_NULL ((struct user_arg_ptr){ 0 })",
               "#define USER_ARG_NULL (&(struct user_arg_ptr){ 0 })",
           )
+
+          replace_once(
+              "KernelSU/kernel/infra/kernel_compat.h",
+              "#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0) && !defined(KSU_HAS_SELINUX_INODE)",
+              """#if !defined(KSU_COMPAT_HAS_CURRENT_SID)
+          static inline u32 current_sid(void)
+          {
+              const struct task_security_struct *tsec = selinux_cred(current_cred());
+              return tsec ? tsec->sid : 0;
+          }
+          #endif
+
+          #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0) && !defined(KSU_HAS_SELINUX_INODE)""",
+          )
           PY
 
           grep -Fq '#define fallthrough' KernelSU/kernel/infra/kernel_compat.h
           grep -Fq '#include "infra/kernel_compat.h"' KernelSU/kernel/policy/allowlist.c
           grep -Fq 'ksu_strncpy_from_user_nofault(arg' KernelSU/kernel/sulog/event.c
           grep -Fq '#define USER_ARG_NULL (&(struct user_arg_ptr){ 0 })' KernelSU/kernel/sulog/event.c
+          grep -Fq 'static inline u32 current_sid(void)' KernelSU/kernel/infra/kernel_compat.h
           git -C KernelSU diff --check
 
           rm -rf drivers/kernelsu
@@ -427,18 +442,32 @@ jobs:
               if anchor not in s:
                   raise SystemExit("task_mmu.c show_map_vma anchor missing")
               s=s.replace(anchor,externs+anchor,1)
-          if "spoofed_redirected_name" not in s:
+
+          # Normalize the redirect-name declaration at function scope.
+          # The generic SUSFS patch can leave it nested inside "if (file)".
+          import re
+          s = re.sub(r'^[ \t]*char \*spoofed_redirected_name = NULL;\n', '', s, flags=re.M)
+          func_anchor = """	const char *name = NULL;
+"""
+          func_decl = """	const char *name = NULL;
+          #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+          char *spoofed_redirected_name = NULL;
+          #endif
+"""
+          if func_decl not in s:
+              if func_anchor not in s:
+                  raise SystemExit("task_mmu.c function-scope anchor missing")
+              s=s.replace(func_anchor,func_decl,1)
+
+          # Ensure the Samsung layout has the SUSFS hook in the file block.
+          if "susfs_sus_kstat_spoof_show_map_vma(inode, &dev, &ino);" not in s:
               old_file="""	if (file) {
           		struct inode *inode = file_inode(vma->vm_file);
           		dev = inode->i_sb->s_dev;
           		ino = inode->i_ino;
           		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
           	}"""
-              new_file="""#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-          	char *spoofed_redirected_name = NULL;
-          #endif
-
-          	if (file) {
+              new_file="""	if (file) {
           		struct inode *inode = file_inode(vma->vm_file);
           #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
           		if (SUSFS_IS_INODE_OPEN_REDIRECT(inode) &&
@@ -461,24 +490,26 @@ jobs:
               if old_file not in s:
                   raise SystemExit("task_mmu.c file block anchor missing")
               s=s.replace(old_file,new_file,1)
-          if "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\norig_flow:" not in s:
+
+          if "orig_flow:" not in s:
               marker="""	/* We don't show the stack guard page in /proc/maps */
-          	start = vma->vm_start;"""
+"""
               repl="""	/* We don't show the stack guard page in /proc/maps */
           #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
           orig_flow:
           	if (spoofed_redirected_name) {
           		seq_pad(m, ' ');
           		seq_puts(m, spoofed_redirected_name);
-          		seq_putc(m, '\\n');
+          		seq_putc(m, '\n');
           		kfree(spoofed_redirected_name);
           		return;
           	}
           #endif
-          	start = vma->vm_start;"""
+"""
               if marker not in s:
                   raise SystemExit("task_mmu.c output anchor missing")
               s=s.replace(marker,repl,1)
+
           mmu.write_text(s,encoding="utf-8")
 
           # fs/stat.c: this tree still has the legacy 4.9 getattr ABI.
