@@ -208,6 +208,8 @@ jobs:
           test -f scripts/root/integrate_sukisu.sh
           test -f scripts/root/verify_sukisu.sh
 
+          trap 'rc=$?; echo "::error::SukiSU integration failed at line ${BASH_LINENO[0]}: ${BASH_COMMAND} (status=${rc})"; exit ${rc}' ERR
+
           bash -x scripts/root/integrate_sukisu.sh \
             "$GITHUB_WORKSPACE" \
             "$SUKISU_REPO" \
@@ -216,6 +218,10 @@ jobs:
           bash -x scripts/root/verify_sukisu.sh \
             "$GITHUB_WORKSPACE" \
             "$SUKISU_REF"
+
+          echo "=== SukiSU integration diff ==="
+          git diff --check
+          git diff -- drivers/Makefile drivers/Kconfig scripts/root/integrate_sukisu.sh scripts/root/verify_sukisu.sh | sed -n '1,260p'
 
       - name: Validate kernel feature support
         shell: bash
@@ -409,8 +415,9 @@ jobs:
 
           scripts/config --file out/.config --disable PSI
 
-          # SukiSU-Ultra v4.2.0 requires KPROBES for its kernel hook backend.
-          # KPM is intentionally disabled and is not exposed as a workflow option.
+          # SukiSU-Ultra v4.2.0 declares KPROBES as a KSU build dependency.
+          # The runtime hook backend used here is the tracepoint syscall redirect
+          # path already present in the pinned source. KPM is intentionally off.
           if [ "$ROOT_IMPL" = "sukisu-ultra" ]; then
             scripts/config --file out/.config --enable KPROBES
             scripts/config --file out/.config --enable HAVE_KPROBES
@@ -434,7 +441,7 @@ jobs:
 
           make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" olddefconfig
 
-          grep -E "^(CONFIG_KSU=|CONFIG_KSU_MANUAL_SU=|CONFIG_KPROBES=|CONFIG_HAVE_KPROBES=|CONFIG_KPM=|CONFIG_KALLSYMS_ALL=|CONFIG_HZ=|CONFIG_HZ_|CONFIG_CPU_FREQ_DEFAULT_GOV=|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_IOSCHED=|CONFIG_ZRAM_WRITEBACK=|CONFIG_PREEMPT|CONFIG_PSI=|CONFIG_LOCALVERSION=)" out/.config || true
+          grep -E "^(CONFIG_KSU=|CONFIG_KSU_MANUAL_SU=|CONFIG_KSU_DISABLE_MANAGER=|CONFIG_KSU_DISABLE_POLICY=|CONFIG_KPROBES=|CONFIG_HAVE_KPROBES=|CONFIG_HAVE_SYSCALL_TRACEPOINTS=|CONFIG_KPM=|CONFIG_KALLSYMS=|CONFIG_KALLSYMS_ALL=|CONFIG_HZ=|CONFIG_HZ_|CONFIG_CPU_FREQ_DEFAULT_GOV=|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_IOSCHED=|CONFIG_ZRAM_WRITEBACK=|CONFIG_PREEMPT|CONFIG_PSI=|CONFIG_LOCALVERSION=)" out/.config || true
 
           case "$ROOT_IMPL" in
             none)
@@ -444,8 +451,13 @@ jobs:
             sukisu-ultra)
               test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
               test "$(grep -c "^CONFIG_KSU_MANUAL_SU=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KSU_DISABLE_MANAGER=y$" out/.config || true)" -eq 0
+              test "$(grep -c "^CONFIG_KSU_DISABLE_POLICY=y$" out/.config || true)" -eq 0
               test "$(grep -c "^CONFIG_KPROBES=y$" out/.config)" -eq 1
               test "$(grep -c "^CONFIG_HAVE_KPROBES=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_HAVE_SYSCALL_TRACEPOINTS=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KALLSYMS=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KALLSYMS_ALL=y$" out/.config)" -eq 1
               test "$(grep -c "^CONFIG_KPM=y$" out/.config || true)" -eq 0
               ;;
             *)
@@ -489,6 +501,11 @@ jobs:
             echo "kernel_name=$KERNEL_NAME_INPUT"
             echo "kernel_name_slug=$KERNEL_NAME_SLUG"
             echo "root_impl=$ROOT_IMPL"
+            echo "kernel_type=Non-GKI"
+            echo "kernel_version=4.9"
+            echo "sukisu_hook=Tracepoint Syscall Redirect + ARM64 syscall-table dispatcher"
+            echo "susfs=OFF (Phase 1 baseline)"
+            echo "kpm=OFF"
             if [ "$ROOT_IMPL" = "sukisu-ultra" ]; then
               echo "sukisu_version=$SUKISU_VERSION"
               echo "sukisu_ref=$SUKISU_REF"
