@@ -70,6 +70,29 @@ if grep -Fq 'selinux_inode(wrapper_inode)' "$KSU_DIR/infra/file_wrapper.c"; then
   die "Linux 4.9 file_wrapper still uses unavailable selinux_inode helper"
 fi
 
+test -f "$KSU_DIR/selinux/selinux.c" || die "SukiSU SELinux implementation missing"
+if grep -Fq 'selinux_state.' "$KSU_DIR/selinux/selinux.c"; then
+  die "Linux 4.9 SELinux code still references unavailable selinux_state"
+fi
+if grep -Eq '(^|[^A-Za-z0-9_])selinux_cred[[:space:]]*\(' "$KSU_DIR/selinux/selinux.c"; then
+  die "Linux 4.9 SELinux code still calls unavailable selinux_cred()"
+fi
+if grep -Eq '(^|[^A-Za-z0-9_])security_secctx_to_secid[[:space:]]*\(' "$KSU_DIR/selinux/selinux.c"; then
+  die "Linux 4.9 SELinux code still calls newer security_secctx_to_secid()"
+fi
+if grep -Eq '(^|[^A-Za-z0-9_])security_secid_to_secctx[[:space:]]*\(' "$KSU_DIR/selinux/selinux.c"; then
+  die "Linux 4.9 SELinux code still calls newer security_secid_to_secctx()"
+fi
+if grep -Eq '(^|[^A-Za-z0-9_])security_release_secctx[[:space:]]*\(' "$KSU_DIR/selinux/selinux.c"; then
+  die "Linux 4.9 SELinux code still calls newer security_release_secctx()"
+fi
+grep -Fq 'ksu_selinux_cred(' "$KSU_DIR/selinux/selinux.c" || die "Linux 4.9 SELinux credential adapter missing"
+grep -Fq 'ksu_security_secctx_to_secid(' "$KSU_DIR/selinux/selinux.c" || die "Linux 4.9 SELinux context-to-SID adapter missing"
+grep -Fq 'ksu_security_secid_to_secctx(' "$KSU_DIR/selinux/selinux.c" || die "Linux 4.9 SELinux SID-to-context adapter missing"
+grep -Fq 'ksu_security_release_secctx(' "$KSU_DIR/selinux/selinux.c" || die "Linux 4.9 SELinux release-context adapter missing"
+grep -Fq 'selinux_enforcing' "$KSU_DIR/selinux/selinux.c" || die "Linux 4.9 SELinux enforcing state adapter missing"
+grep -Fq 'selinux_enabled' "$KSU_DIR/selinux/selinux.c" || die "Linux 4.9 SELinux enabled state adapter missing"
+
 
 test -f "$KSU_DIR/policy/app_profile.c" || die "SukiSU app_profile.c missing"
 if grep -Fq 'current->seccomp.filter_count' "$KSU_DIR/policy/app_profile.c"; then
