@@ -527,7 +527,7 @@ jobs:
       - name: Upload final AnyKernel3 ZIP
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: kazera-m11-anykernel3-\${{ github.run_number }}
+          name: kazera-m11-anykernel3-${{ github.run_number }}
           path: dist/*-AnyKernel3-*.zip
           if-no-files-found: error
           retention-days: 30
