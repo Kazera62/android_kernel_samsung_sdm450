@@ -74,6 +74,24 @@ test -f "$KSU_DIR/infra/seccomp_cache.c" || die "SukiSU seccomp_cache.c missing"
 grep -Fq '#include <linux/refcount.h>' "$KSU_DIR/infra/seccomp_cache.c" || die "Linux 4.9 refcount header missing from seccomp_cache"
 grep -Fq 'SECCOMP_ARCH_NATIVE_NR __NR_syscalls' "$KSU_DIR/infra/seccomp_cache.c" || die "Linux 4.9 native seccomp syscall-count shim missing"
 
+test -f "$KSU_DIR/infra/su_mount_ns.c" || die "SukiSU su_mount_ns.c missing"
+if grep -q '#include <uapi/linux/mount.h>' "$KSU_DIR/infra/su_mount_ns.c"; then
+  die "Linux 4.9 su_mount_ns still includes unavailable uapi/linux/mount.h"
+fi
+grep -Fq 'extern long do_mount' "$KSU_DIR/infra/su_mount_ns.c" || die "Linux 4.9 do_mount adapter missing"
+grep -Fq 'sys_setns(fd, flags)' "$KSU_DIR/infra/su_mount_ns.c" || die "Linux 4.9 sys_setns adapter missing"
+grep -Fq 'sys_unshare(CLONE_NEWNS)' "$KSU_DIR/infra/su_mount_ns.c" || die "Linux 4.9 sys_unshare adapter missing"
+grep -Fq 'set_fs(KERNEL_DS)' "$KSU_DIR/infra/su_mount_ns.c" || die "Linux 4.9 do_mount KERNEL_DS bridge missing"
+if grep -q 'path_mount(' "$KSU_DIR/infra/su_mount_ns.c"; then
+  die "Linux 4.9 su_mount_ns still references unavailable path_mount"
+fi
+if grep -q 'ksys_unshare(' "$KSU_DIR/infra/su_mount_ns.c"; then
+  die "Linux 4.9 su_mount_ns still references unavailable ksys_unshare"
+fi
+if grep -q '__arm64_sys_setns\|__x64_sys_setns' "$KSU_DIR/infra/su_mount_ns.c"; then
+  die "Linux 4.9 su_mount_ns still references newer __*_sys_setns entry points"
+fi
+
 test -f "$KSU_DIR/infra/event_queue.h" || die "SukiSU event_queue.h missing"
 test -f "$KSU_DIR/infra/event_queue.c" || die "SukiSU event_queue.c missing"
 grep -Fq 'unsigned int ksu_event_queue_poll' "$KSU_DIR/infra/event_queue.h" || die "Linux 4.9 event_queue poll prototype not adapted"
