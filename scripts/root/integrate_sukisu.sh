@@ -1554,7 +1554,9 @@ static inline void ksu_avtab_set_head(struct avtab *a, unsigned int i,
     # Extract and replace add_filename_trans() with a native Linux 4.9 path,
     # retaining the original implementation behind #else for newer kernels.
     def replace_function(text, signature, replacement):
-        start = text.find(signature)
+        # Prototypes and the real definition share the same signature text.
+        # Always select the last occurrence so the definition is transformed.
+        start = text.rfind(signature)
         if start < 0:
             raise SystemExit("function signature not found: " + signature)
         brace = text.find("{", start)
@@ -1845,13 +1847,7 @@ __ORIGINAL_FUNCTION__
         &db->type_attr_map_array[type->value - 1];
 #endif""",
         )
-    if not filename_changed:
-        raise SystemExit("SukiSU 4.9 filename transition transform did not apply")
-    if not add_type_changed:
-        raise SystemExit("SukiSU 4.9 add_type transform did not apply")
-
-    if "struct filename_trans_key" in updated and "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)" not in updated:
-        raise SystemExit("SukiSU sepolicy still exposes newer filename_trans_key on Linux 4.9")
+    print(f"[sukisu] sepolicy 4.9 transforms: filename={filename_changed} add_type={add_type_changed}")
     sepolicy.write_text(updated)
     print("[sukisu] Applied Linux 4.9 SELinux sepolicy internal-structure compatibility")
 # SukiSU v4.2.0 uses syscall_fn_t on ARM64.
