@@ -552,24 +552,6 @@ test "$(readlink "$DRIVER_DIR/kernelsu")" = "../KernelSU/kernel"
 log "Verifying integrated source"
 test "$(git -C "$KSU_DIR" rev-parse HEAD)" = "$SUKISU_REF" || die "final SukiSU SHA mismatch"
 
-# Custom kernel-side version identifier requested for this build.
-# Keep the upstream source/tag pin immutable, but make the runtime version
-# deterministic instead of depending on network-derived commit counts.
-ksu_kbuild="$KSU_DIR/kernel/Kbuild"
-if [ -f "$ksu_kbuild" ]; then
-  python3 - "$ksu_kbuild" <<'PYVER'
-from pathlib import Path
-import sys
-p = Path(sys.argv[1])
-s = p.read_text()
-s = s.replace('KSU_VERSION     := $(if $(LOCAL_COUNT),$(shell expr $(VERSION_BASE) + $(LOCAL_COUNT) - $(VERSION_OFFSET)),13000)',
-              'KSU_VERSION     := 40900')
-s = s.replace('VERSION_TAG     := $(or $(KSU_GITHUB_VER),$(git_latest_tag),4.1.3)',
-              'VERSION_TAG     := 4.2.0_40900')
-p.write_text(s)
-PYVER
-  log "Set custom SukiSU build version: V4.2.0_40900 (KSU_VERSION=40900)"
-fi
 grep -Fq 'config KSU' "$KSU_DIR/kernel/Kconfig" || die "KSU config entry missing"
 grep -Fq 'depends on KPROBES && EXT4_FS' "$KSU_DIR/kernel/Kconfig" || die "v4.2.0 KSU dependency changed: expected KPROBES + EXT4_FS"
 grep -Fq 'config KSU_MANUAL_SU' "$KSU_DIR/kernel/Kconfig" || die "KSU_MANUAL_SU config entry missing"
