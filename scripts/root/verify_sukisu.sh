@@ -100,6 +100,15 @@ if grep -q 'handle_inode_event\|fsnotify_add_inode_mark\|fsnotify_init_mark(m, g
   die "Linux 4.9 pkg_observer still references newer fsnotify API"
 fi
 
+grep -Fq 'ksu_kernel_read(struct file' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 kernel_read compatibility helper missing"
+grep -Fq 'ksu_kernel_write(struct file' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 kernel_write compatibility helper missing"
+if grep -RqsE '(^|[^A-Za-z0-9_])kernel_read\\(' "$KSU_DIR"; then
+  die "raw kernel_read() call remains in SukiSU tree"
+fi
+if grep -RqsE '(^|[^A-Za-z0-9_])kernel_write\\(' "$KSU_DIR"; then
+  die "raw kernel_write() call remains in SukiSU tree"
+fi
+
 test -f "$KSU_DIR/infra/event_queue.h" || die "SukiSU event_queue.h missing"
 test -f "$KSU_DIR/infra/event_queue.c" || die "SukiSU event_queue.c missing"
 grep -Fq 'unsigned int ksu_event_queue_poll' "$KSU_DIR/infra/event_queue.h" || die "Linux 4.9 event_queue poll prototype not adapted"
