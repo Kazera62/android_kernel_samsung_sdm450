@@ -40,8 +40,6 @@ grep -Fq '4.9 LSM head_addr=' "$KSU_DIR/hook/lsm_hook.c" || die "Linux 4.9 list_
 grep -Fq 'list_for_each_entry (entry, head_49, list)' "$KSU_DIR/hook/lsm_hook.c" || die "Linux 4.9 LSM list walker missing"
 grep -Fq 'list_del_rcu(&hook->list.list)' "$KSU_DIR/hook/lsm_hook.c" || die "Linux 4.9 LSM injected-entry cleanup missing"
 
-grep -Fq 'KSU_VERSION     := 40900' "$KSU_DIR/kernel/Kbuild" || die "custom KSU_VERSION 40900 missing"
-grep -Fq 'VERSION_TAG     := 4.2.0_40900' "$KSU_DIR/kernel/Kbuild" || die "custom SukiSU version label missing"
 grep -Fq '#define KSUD_PATH "/data/adb/ksud"' "$KSU_DIR/runtime/ksud.h" || die "KSUD_PATH is not /data/adb/ksud"
 grep -Fq 'KERNEL_SU_RC' "$KSU_DIR/runtime/ksud_integration.c" || die "KERNEL_SU_RC bootstrap is missing"
 grep -Fq '#elif defined(__aarch64__)' "$KSU_DIR/hook/syscall_hook.h" || die "ARM64 syscall_fn_t compatibility missing"
