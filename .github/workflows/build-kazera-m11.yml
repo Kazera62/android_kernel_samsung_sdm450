@@ -328,7 +328,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          def once(path, old, new, label):
+          def once(path, old, new, label, source=None):
               p = Path(path)
               s = p.read_text(encoding='utf-8')
               if new in s:
