@@ -1011,6 +1011,87 @@ static inline unsigned long current_user_stack_pointer(void)
             print(f"[sukisu] Added Linux 4.9 current_user_stack_pointer shim: {sucompat}")
 
 
+# Linux 4.9 SELinux compatibility.
+# The pinned SukiSU source targets newer LSM wrappers and the selinux_state
+# object. Vendor Linux 4.9 exposes the SELinux credential blob directly via
+# cred->security, and the SELinux security-server conversion functions through
+# security_context_to_sid()/security_sid_to_context().
+selinux_src = kernel_dir / "selinux" / "selinux.c"
+if selinux_src.is_file():
+    source = selinux_src.read_text()
+    updated = source
+    compat = """#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+static inline struct task_security_struct *ksu_selinux_cred(const struct cred *cred)
+{
+    return cred ? (struct task_security_struct *)cred->security : NULL;
+}
+
+static inline int ksu_security_secctx_to_secid(const char *context, u32 len, u32 *sid)
+{
+    return security_context_to_sid(context, len, sid, GFP_KERNEL);
+}
+
+static inline int ksu_security_secid_to_secctx(u32 sid, char **context, u32 *len)
+{
+    return security_sid_to_context(sid, context, len);
+}
+
+static inline void ksu_security_release_secctx(char *context, u32 len)
+{
+    (void)len;
+    kfree(context);
+}
+#endif
+
+"""
+    if compat.strip() not in updated:
+        insert_at = updated.find('#include "ksu.h"')
+        if insert_at < 0:
+            insert_at = updated.find('#include "klog.h"')
+        if insert_at < 0:
+            raise SystemExit("SukiSU selinux.c include insertion marker not found")
+        updated = updated[:insert_at] + compat + updated[insert_at:]
+
+    updated = updated.replace("tsec = selinux_cred(cred);", "tsec = ksu_selinux_cred(cred);")
+    updated = updated.replace("error = security_secctx_to_secid(domain, strlen(domain), &sid);",
+                              "error = ksu_security_secctx_to_secid(domain, strlen(domain), &sid);")
+    updated = updated.replace("    selinux_state.enforcing = enforce;",
+                              "    selinux_enforcing = enforce ? 1 : 0;")
+    updated = updated.replace("    if (selinux_state.disabled) {",
+                              "    if (!selinux_enabled) {")
+    updated = updated.replace("    return selinux_state.enforcing;",
+                              "    return selinux_enforcing;")
+    updated = updated.replace("return security_secctx_to_secid(KERNEL_SU_CONTEXT, strlen(KERNEL_SU_CONTEXT), &cached_su_sid);",
+                              "return ksu_security_secctx_to_secid(KERNEL_SU_CONTEXT, strlen(KERNEL_SU_CONTEXT), &cached_su_sid);")
+    for (const name of ["KERNEL_SU_CONTEXT","ZYGOTE_CONTEXT","INIT_CONTEXT","KSU_FILE_CONTEXT"]) {
+        updated = updated.replace(
+            "err = security_secctx_to_secid(" + name + ",",
+            "err = ksu_security_secctx_to_secid(" + name + ","
+        )
+    }
+    updated = updated.replace("security_secctx_to_secid(", "ksu_security_secctx_to_secid(")
+    updated = updated.replace("security_secid_to_secctx(tsec->sid, &ctx);",
+                              "ksu_security_secid_to_secctx(tsec->sid, &ctx);")
+    updated = updated.replace("security_release_secctx(cp.context, cp.len);",
+                              "ksu_security_release_secctx(cp.context, cp.len);")
+    updated = updated.replace("security_release_secctx(", "ksu_security_release_secctx(")
+    updated = updated.replace("const struct task_security_struct *tsec = selinux_cred(cred);",
+                              "const struct task_security_struct *tsec = ksu_selinux_cred(cred);")
+
+    if "selinux_state." in updated:
+        raise SystemExit("SukiSU SELinux transform still references selinux_state")
+    if "selinux_cred(" in updated and "ksu_selinux_cred(" not in updated:
+        raise SystemExit("SukiSU SELinux transform still references newer selinux_cred")
+    if "security_secctx_to_secid(" in updated and "ksu_security_secctx_to_secid(" not in updated:
+        raise SystemExit("SukiSU SELinux transform still references LSM secctx_to_secid wrapper")
+    if "security_secid_to_secctx(" in updated and "ksu_security_secid_to_secctx(" not in updated:
+        raise SystemExit("SukiSU SELinux transform still references LSM secid_to_secctx wrapper")
+    if "security_release_secctx(" in updated and "ksu_security_release_secctx(" not in updated:
+        raise SystemExit("SukiSU SELinux transform still references LSM release_secctx wrapper")
+    if updated != source:
+        selinux_src.write_text(updated)
+    print("[sukisu] Applied Linux 4.9 SELinux compatibility")
+
 # SukiSU v4.2.0 uses syscall_fn_t on ARM64.
 # Linux 4.9 ARM64 sys_call_table entries use the legacy:
 #     long handler(const struct pt_regs *)
