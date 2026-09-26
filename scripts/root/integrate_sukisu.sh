@@ -592,6 +592,44 @@ if su_mount_ns.is_file():
         su_mount_ns.write_text(updated)
     print("[sukisu] Applied Linux 4.9 mount namespace compatibility")
 
+# Linux 4.9 fsnotify compatibility for SukiSU package observer.
+# The 4.9 fsnotify API uses handle_event(), an explicit free_mark callback,
+# fsnotify_add_mark(), and fsnotify_alloc_group(&ops).
+pkg_observer = kernel_dir / "manager" / "pkg_observer.c"
+if pkg_observer.is_file():
+    source = pkg_observer.read_text()
+    updated = source
+    updated = updated.replace("#include <linux/sched.h>\n", "#include <linux/sched.h>\n", 1)
+    start = updated.find("static int ksu_handle_inode_event(")
+    end = updated.find("\n}\n\nstatic const struct fsnotify_ops ksu_ops", start)
+    if start < 0 or end < 0:
+        raise SystemExit("SukiSU pkg_observer handler boundaries not found")
+    handler = '''static int ksu_handle_inode_event(struct fsnotify_group *group,\n                                  struct inode *inode,\n                                  struct fsnotify_mark *inode_mark,\n                                  struct fsnotify_mark *vfsmount_mark,\n                                  u32 mask, void *data, int data_type,\n                                  const unsigned char *file_name, u32 cookie)\n{\n    (void)group;\n    (void)inode;\n    (void)inode_mark;\n    (void)vfsmount_mark;\n    (void)data;\n    (void)data_type;\n    (void)cookie;\n\n    if (!file_name)\n        return 0;\n    if (mask & FS_ISDIR)\n        return 0;\n    if (strlen(file_name) == 13 && !memcmp(file_name, "packages.list", 13)) {\n        pr_info("packages.list detected: %d\\n", mask);\n        track_throne(false);\n    }\n    return 0;\n}'''
+
+    updated = updated[:start] + handler + updated[end+2:]
+    old_ops = '''static const struct fsnotify_ops ksu_ops = {\n    .handle_inode_event = ksu_handle_inode_event,\n};'''
+
+    new_ops = '''static const struct fsnotify_ops ksu_ops = {\n    .handle_event = ksu_handle_inode_event,\n};'''
+
+    if old_ops in updated:
+        updated = updated.replace(old_ops, new_ops, 1)
+    old_mark = '''static int add_mark_on_inode(struct inode *inode, u32 mask, struct fsnotify_mark **out)\n{\n    struct fsnotify_mark *m;\n\n    m = kzalloc(sizeof(*m), GFP_KERNEL);\n    if (!m)\n        return -ENOMEM;\n\n    fsnotify_init_mark(m, g);\n    m->mask = mask;\n\n    if (fsnotify_add_inode_mark(m, inode, 0)) {\n        fsnotify_put_mark(m);\n        return -EINVAL;\n    }\n    *out = m;\n    return 0;\n}'''
+
+    new_mark = '''static void ksu_free_mark(struct fsnotify_mark *mark)\n{\n    kfree(mark);\n}\n\nstatic int add_mark_on_inode(struct inode *inode, u32 mask, struct fsnotify_mark **out)\n{\n    struct fsnotify_mark *m;\n    int ret;\n\n    m = kzalloc(sizeof(*m), GFP_KERNEL);\n    if (!m)\n        return -ENOMEM;\n\n    fsnotify_init_mark(m, ksu_free_mark);\n    m->mask = mask;\n\n    ret = fsnotify_add_mark(m, g, inode, NULL, 0);\n    if (ret) {\n        fsnotify_destroy_mark(m, g);\n        fsnotify_put_mark(m);\n        return ret;\n    }\n    *out = m;\n    return 0;\n}'''
+
+    if old_mark not in updated:
+        raise SystemExit("SukiSU pkg_observer mark helper pattern not found")
+    updated = updated.replace(old_mark, new_mark, 1)
+    old_alloc = '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)\n    g = fsnotify_alloc_group(&ksu_ops, 0);\n#else\n    g = fsnotify_alloc_group(&ksu_ops);\n#endif'''
+
+    new_alloc = '''g = fsnotify_alloc_group(&ksu_ops);'''
+
+    if old_alloc in updated:
+        updated = updated.replace(old_alloc, new_alloc, 1)
+    if updated != source:
+        pkg_observer.write_text(updated)
+    print("[sukisu] Applied Linux 4.9 fsnotify package-observer compatibility")
+
 # Linux 4.9 compatibility checks for the transformed tree.
 import re
 raw_nofault = []
