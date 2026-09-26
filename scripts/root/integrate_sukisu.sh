@@ -284,6 +284,58 @@ print(f"[sukisu] Rewired legacy ARM64 syscall-table calls in {replaced_calls} Su
 # Linux 4.9 declares strncpy_from_user() from linux/uaccess.h. The upstream
 # bridge used it without including that header because newer trees pull it in
 # transitively.
+# Linux 4.9 VFS has a smaller struct file_operations than modern kernels.
+# SukiSU's fd wrapper must only reference fields that exist in 4.9.
+file_wrapper = kernel_dir / "infra" / "file_wrapper.c"
+if file_wrapper.is_file():
+    fw = file_wrapper.read_text()
+
+    if "#include <linux/module.h>" not in fw:
+        fw = fw.replace("#include <linux/gfp.h>\\n", "#include <linux/gfp.h>\\n#include <linux/module.h>\\n", 1)
+
+    # __poll_t does not exist in Linux 4.9; file_operations::poll returns
+    # unsigned int there.
+    fw = fw.replace(
+        "static __poll_t ksu_wrapper_poll(struct file *fp, struct poll_table_struct *pts)",
+        "static unsigned int ksu_wrapper_poll(struct file *fp, struct poll_table_struct *pts)",
+        1,
+    )
+
+    # iopoll was added long after 4.9 and must not be referenced at all.
+    iopoll_start = fw.find("#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)\\nstatic int ksu_wrapper_iopoll")
+    iopoll_end = fw.find("#endif\\n\\n#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)", iopoll_start)
+    if iopoll_start >= 0 and iopoll_end >= 0:
+        fw = fw[:iopoll_start] + fw[iopoll_end + len("#endif\\n\\n"):]
+    else:
+        print("[sukisu] file_wrapper iopoll block already absent or source variant differs")
+
+    # mmap_supported_flags is not part of Linux 4.9's file_operations.
+    mmap_flags = '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
+    p->ops.fop_flags = fp->f_op->fop_flags;
+#else
+    p->ops.mmap_supported_flags = fp->f_op->mmap_supported_flags;
+#endif
+'''
+    if mmap_flags in fw:
+        fw = fw.replace(mmap_flags, "", 1)
+
+    # remap_file_range and fadvise are newer VFS callbacks and absent from 4.9.
+    remap_start = fw.find("// no REMAP_FILE_DEDUP:")
+    remap_end = fw.find("static void ksu_release_file_wrapper", remap_start)
+    if remap_start >= 0 and remap_end >= 0:
+        fw = fw[:remap_start] + fw[remap_end:]
+
+    fw = fw.replace(
+        "    p->ops.remap_file_range = fp->f_op->remap_file_range ? ksu_wrapper_remap_file_range : NULL;\\n"
+        "    p->ops.fadvise = fp->f_op->fadvise ? ksu_wrapper_fadvise : NULL;\\n",
+        "",
+        1,
+    )
+
+    file_wrapper.write_text(fw)
+    print("[sukisu] Applied Linux 4.9 VFS file_wrapper compatibility")
+
+
 bridge_path = kernel_dir / "hook" / "syscall_event_bridge.c"
 if bridge_path.is_file():
     bridge_text = bridge_path.read_text()
