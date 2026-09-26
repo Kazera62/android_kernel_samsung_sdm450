@@ -370,7 +370,7 @@ if end < 0:
     raise SystemExit("4.9 LSM hook block end not found")
 
 new_block = """#else
-    struct list_head *head;
+    struct list_head *head_49;
 
     heads_addr = find_kernel_symbol_exact("security_hook_heads");
     if (!heads_addr) {
@@ -379,12 +379,12 @@ new_block = """#else
         goto out_unlock;
     }
 
-    head = (struct list_head *)(heads_addr + hook->head_offset);
+    head_49 = (struct list_head *)(heads_addr + hook->head_offset);
     pr_info("4.9 LSM head_addr=0x%lx head_offset=0x%lx hook_offset=0x%lx\\n",
-            (unsigned long)head, hook->head_offset, hook->hook_offset);
+            (unsigned long)head_49, hook->head_offset, hook->hook_offset);
 
     /* Primary head: find the real SELinux/security hook entry. */
-    list_for_each_entry (entry, head, list) {
+    list_for_each_entry (entry, head_49, list) {
         void **slot = (void **)((char *)entry + hook->hook_offset);
         void *current_origin = READ_ONCE(*slot);
         int j;
@@ -420,7 +420,7 @@ new_block = """#else
      * is done in units of struct list_head.
      */
     if (!selected_entry && hook->offset) {
-        struct list_head *real_head = head + hook->offset;
+        struct list_head *real_head = head_49 + hook->offset;
 
         list_for_each_entry (entry, real_head, list) {
             void **slot = (void **)((char *)entry + hook->hook_offset);
