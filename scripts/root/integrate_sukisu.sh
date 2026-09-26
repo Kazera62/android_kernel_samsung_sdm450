@@ -132,6 +132,8 @@ print(f"[sukisu] Replaced split linux/sched/*.h includes in {replaced_sched_head
 compat_header = kernel_dir / "kernel_compat.h"
 if compat_header.is_file():
     text = compat_header.read_text()
+    if "#include <linux/slab.h>" not in text:
+        text = text.replace("#include <linux/fs.h>\n", "#include <linux/fs.h>\n#include <linux/slab.h>\n#include <linux/vmalloc.h>\n", 1)
     helper = '''
 #ifndef ksu_strncpy_from_user_nofault
 static inline long ksu_strncpy_from_user_nofault(char *dst,
@@ -759,6 +761,28 @@ if compat_header.is_file():
 #define fallthrough do { } while (0)
 #endif
 
+#ifndef ksu_kvmalloc
+static inline void *ksu_kvmalloc(size_t size, gfp_t flags)
+{
+    void *ret = kmalloc(size, flags | __GFP_NOWARN);
+    if (ret)
+        return ret;
+    return __vmalloc(size, flags, PAGE_KERNEL);
+}
+#endif
+
+#ifndef ksu_kvfree
+static inline void ksu_kvfree(const void *addr)
+{
+    if (!addr)
+        return;
+    if (is_vmalloc_addr(addr))
+        vfree(addr);
+    else
+        kfree(addr);
+}
+#endif
+
 #ifndef ksu_kernel_read
 static inline ssize_t ksu_kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
 {
@@ -800,6 +824,8 @@ for path in kernel_dir.rglob("*"):
     source = path.read_text()
     updated = re.sub(r"(?<![A-Za-z0-9_])kernel_read\(", "ksu_kernel_read(", source)
     updated = re.sub(r"(?<![A-Za-z0-9_])kernel_write\(", "ksu_kernel_write(", updated)
+    updated = re.sub(r"(?<![A-Za-z0-9_])kvmalloc\(", "ksu_kvmalloc(", updated)
+    updated = re.sub(r"(?<![A-Za-z0-9_])kvfree\(", "ksu_kvfree(", updated)
     if updated != source:
         path.write_text(updated)
         replaced_io += 1
@@ -808,7 +834,29 @@ print(f"[sukisu] Rewired kernel_read/kernel_write calls through 4.9 helpers in {
 # Rebuild the compatibility helper block after all global rewrites. This
 # guarantees the shim itself can never be rewritten into a recursive call.
 compat_text = compat_header.read_text()
-io_block = """#ifndef ksu_kernel_read
+io_block = """#ifndef ksu_kvmalloc
+static inline void *ksu_kvmalloc(size_t size, gfp_t flags)
+{
+    void *ret = kmalloc(size, flags | __GFP_NOWARN);
+    if (ret)
+        return ret;
+    return __vmalloc(size, flags, PAGE_KERNEL);
+}
+#endif
+
+#ifndef ksu_kvfree
+static inline void ksu_kvfree(const void *addr)
+{
+    if (!addr)
+        return;
+    if (is_vmalloc_addr(addr))
+        vfree(addr);
+    else
+        kfree(addr);
+}
+#endif
+
+#ifndef ksu_kernel_read
 static inline ssize_t ksu_kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
 {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
@@ -862,6 +910,37 @@ if "return ksu_kernel_read(file" in compat_text or "return ksu_kernel_write(file
     raise SystemExit("Linux 4.9 kernel_compat I/O helper is recursive after normalization")
 print("[sukisu] Normalized Linux 4.9 kernel_read/kernel_write helper block")
 # Linux 4.9 app_profile seccomp compatibility.
+# Linux 4.9 has no seccomp.filter_count field and uses put_seccomp_filter()
+# to drop a task's filter reference.
+app_profile = kernel_dir / "policy" / "app_profile.c"
+if app_profile.is_file():
+    source = app_profile.read_text()
+    updated = source
+    updated = updated.replace(
+        "void seccomp_filter_release(struct task_struct *tsk);",
+        "void put_seccomp_filter(struct task_struct *tsk);",
+        1,
+    )
+    updated = updated.replace(
+        "    atomic_set(&current->seccomp.filter_count, 0);\n",
+        "",
+        1,
+    )
+    updated = updated.replace(
+        "    seccomp_filter_release(fake);",
+        "    put_seccomp_filter(fake);",
+        1,
+    )
+    if "current->seccomp.filter_count" in updated:
+        raise SystemExit("SukiSU app_profile still references unavailable Linux 4.9 seccomp.filter_count")
+    if "seccomp_filter_release(fake)" in updated:
+        raise SystemExit("SukiSU app_profile still references newer seccomp_filter_release")
+    if "put_seccomp_filter(fake);" not in updated:
+        raise SystemExit("SukiSU app_profile Linux 4.9 filter release adapter missing")
+    if updated != source:
+        app_profile.write_text(updated)
+    print("[sukisu] Applied Linux 4.9 app_profile seccomp compatibility")
+
 # Linux 4.9 has only { mode, filter } in struct seccomp and exposes
 # put_seccomp_filter() for dropping a task's filter reference.
 app_profile = kernel_dir / "policy" / "app_profile.c"
@@ -957,15 +1036,22 @@ static inline unsigned long current_user_stack_pointer(void)
 
 
 # SukiSU v4.2.0 uses syscall_fn_t on ARM64.
-# Linux 4.9 ARM64 does not provide the newer sys_call_ptr_t alias.
-# Inject the compatibility type independently, without relying on the exact
-# layout or whitespace of the pinned upstream header.
+# Linux 4.9 ARM64 sys_call_table entries use the legacy:
+#     long handler(const struct pt_regs *)
+# function signature.
 text = hook.read_text()
 arm64_typedef = """#if defined(__aarch64__)
-typedef void (*syscall_fn_t)(void);
+typedef long (*syscall_fn_t)(const struct pt_regs *);
 #endif
 """
 if arm64_typedef not in text:
+    # Remove a previous standalone ARM64 typedef, if present, before replacing it.
+    text = re.sub(
+        r"#if defined\(__aarch64__\)\ntypedef void \(\*syscall_fn_t\)\(void\);\n#endif\n",
+        "",
+        text,
+        count=1,
+    )
     text = arm64_typedef + text
 if "#include <linux/version.h>" not in text:
     text = "#include <linux/version.h>\n" + text
