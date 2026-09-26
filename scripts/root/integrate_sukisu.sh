@@ -524,6 +524,25 @@ fail:
 
 
 
+# Linux 4.9 poll compatibility for SukiSU's event queue.
+event_queue_h = kernel_dir / "infra" / "event_queue.h"
+event_queue_c = kernel_dir / "infra" / "event_queue.c"
+if event_queue_h.is_file() or event_queue_c.is_file():
+    for path in (event_queue_h, event_queue_c):
+        if not path.is_file():
+            continue
+        source = path.read_text()
+        updated = source
+        # Linux 4.9 has no __poll_t; file_operations::poll and the poll
+        # wakeup masks use the classic integer poll ABI.
+        updated = updated.replace("__poll_t ksu_event_queue_poll", "unsigned int ksu_event_queue_poll")
+        updated = updated.replace("    __poll_t mask = 0;", "    unsigned int mask = 0;")
+        updated = updated.replace("EPOLLHUP | POLLHUP", "POLLHUP")
+        updated = updated.replace("EPOLLIN | EPOLLRDNORM", "POLLIN | POLLRDNORM")
+        if updated != source:
+            path.write_text(updated)
+    print("[sukisu] Applied Linux 4.9 poll/event_queue compatibility")
+
 # Linux 4.9 compatibility checks for the transformed tree.
 import re
 raw_nofault = []
