@@ -832,9 +832,6 @@ io_block = '''
 #ifndef ksu_kvmalloc
 static inline void *ksu_kvmalloc(size_t size, gfp_t flags)
 {
-    void *ret = kmalloc(size, flags | __GFP_NOWARN);
-    if (ret)
-        return ret;
     return __vmalloc(size, flags, PAGE_KERNEL);
 }
 #endif
@@ -915,6 +912,8 @@ if compat_text.count("#ifndef ksu_kvfree") != 1:
     raise SystemExit("kernel_compat.h ksu_kvfree helper is not unique")
 if "return ksu_kernel_read(file" in compat_text or "return ksu_kernel_write(file" in compat_text:
     raise SystemExit("Linux 4.9 kernel_compat I/O helper is recursive after normalization")
+if "is_vmalloc_addr(" in compat_text:
+    raise SystemExit("Linux 4.9 kernel_compat must not depend on unavailable is_vmalloc_addr")
 print("[sukisu] Normalized Linux 4.9 compatibility helper block")
 
 # Linux 4.9 app_profile seccomp compatibility.
@@ -953,7 +952,8 @@ for path in kernel_dir.rglob("*.c"):
     if not path.is_file():
         continue
     source = path.read_text()
-    if ("ksu_kernel_read(" in source or "ksu_kernel_write(" in source) and '#include "kernel_compat.h"' not in source:
+    if ("ksu_kernel_read(" in source or "ksu_kernel_write(" in source or
+        "ksu_kvmalloc(" in source or "ksu_kvfree(" in source) and '#include "kernel_compat.h"' not in source:
         path.write_text('#include "kernel_compat.h"\n' + source)
 
 # Linux 4.9 task_work compatibility.
@@ -1128,6 +1128,374 @@ static inline void ksu_security_release_secctx(char *context, u32 len)
     if updated != source:
         selinux_src.write_text(updated)
     print("[sukisu] Applied Linux 4.9 SELinux compatibility")
+
+# Linux 4.9 SELinux policydb compatibility.
+# Linux 4.9 has no struct selinux_policy/selinux_state. Use a local wrapper
+# around policydb for duplication, then submit the modified binary through
+# security_load_policy(), which owns the real policy swap and SID table.
+sepolicy_h = kernel_dir / "selinux" / "sepolicy.h"
+if sepolicy_h.is_file():
+    text = sepolicy_h.read_text()
+    if "struct selinux_policy {" not in text:
+        if "#include <linux/version.h>" not in text:
+            marker = "#include <linux/types.h>\n"
+            if marker not in text:
+                raise SystemExit("SukiSU sepolicy.h linux/types include marker not found")
+            text = text.replace(marker, marker + "#include <linux/version.h>\n", 1)
+        marker = '#include "ss/policydb.h"\n'
+        if marker not in text:
+            raise SystemExit("SukiSU sepolicy.h policydb include marker not found")
+        compat = """#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+struct selinux_policy {
+    struct policydb policydb;
+};
+#endif
+
+"""
+        text = text.replace(marker, marker + compat, 1)
+        sepolicy_h.write_text(text)
+
+sepolicy_c = kernel_dir / "selinux" / "sepolicy.c"
+if sepolicy_c.is_file():
+    text = sepolicy_c.read_text()
+    start = text.find("void ksu_destroy_sepolicy(struct selinux_policy *pol)")
+    if start < 0:
+        raise SystemExit("SukiSU sepolicy.c policy wrapper functions not found")
+    compat_start = """#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+
+void ksu_destroy_sepolicy(struct selinux_policy *pol)
+{
+    if (!pol)
+        return;
+    policydb_destroy(&pol->policydb);
+    kfree(pol);
+}
+
+struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol)
+{
+    int ret;
+    size_t len;
+    struct policydb *source;
+    struct selinux_policy *new_pol;
+    void *data;
+    struct policy_file fp;
+
+    source = old_pol ? &old_pol->policydb : &policydb;
+    len = source->len;
+    if (!len)
+        return ERR_PTR(-EINVAL);
+
+    data = vmalloc(len);
+    if (!data)
+        return ERR_PTR(-ENOMEM);
+
+    fp.data = data;
+    fp.len = len;
+    ret = policydb_write(source, &fp);
+    if (ret) {
+        vfree(data);
+        return ERR_PTR(ret);
+    }
+
+    new_pol = kzalloc(sizeof(*new_pol), GFP_KERNEL);
+    if (!new_pol) {
+        vfree(data);
+        return ERR_PTR(-ENOMEM);
+    }
+
+    fp.data = data;
+    fp.len = len;
+    ret = policydb_read(&new_pol->policydb, &fp);
+    vfree(data);
+    if (ret) {
+        kfree(new_pol);
+        return ERR_PTR(ret);
+    }
+
+    new_pol->policydb.len = len;
+    return new_pol;
+}
+
+#else
+""";
+    if "#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)" not in text[start:start+200]:
+        rest_start = text.find("    policydb_destroy(&pol->policydb);", start)
+        if rest_start < 0:
+            raise SystemExit("SukiSU sepolicy.c destroy body anchor not found")
+        text = text[:start] + compat_start + text[rest_start:]
+        end_marker = "    return ERR_PTR(ret);\n}"
+        # The modern implementation closes at the first return ERR_PTR block after its function.
+        modern_end = text.find(end_marker, text.find("struct selinux_policy *ksu_dup_sepolicy", start))
+        if modern_end < 0:
+            raise SystemExit("SukiSU sepolicy.c modern duplicate function end not found")
+        modern_end += len(end_marker)
+        text = text[:modern_end] + "\n#endif\n" + text[modern_end:]
+    sepolicy_c.write_text(text)
+
+rules = kernel_dir / "selinux" / "rules.c"
+if rules.is_file():
+    text = rules.read_text()
+    state_start = text.find("static void reset_avc_cache()")
+    batch_marker = "#define KSU_SEPOLICY_MAX_BATCH_SIZE"
+    batch_pos = text.find(batch_marker)
+    if state_start < 0 or batch_pos < 0:
+        raise SystemExit("SukiSU rules.c policy-state block boundaries not found")
+
+    compat_rules = """#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+static int ksu_install_sepolicy_49(struct policydb *db)
+{
+    void *data;
+    struct policy_file fp;
+    size_t len;
+    int ret;
+
+    if (!db || !db->len)
+        return -EINVAL;
+
+    len = db->len;
+    data = vmalloc(len);
+    if (!data)
+        return -ENOMEM;
+
+    fp.data = data;
+    fp.len = len;
+    ret = policydb_write(db, &fp);
+    if (ret) {
+        vfree(data);
+        return ret;
+    }
+
+    ret = security_load_policy(data, len);
+    vfree(data);
+    return ret;
+}
+
+void apply_kernelsu_rules(void)
+{
+    struct selinux_policy *pol;
+    struct policydb *db;
+    int ret;
+
+    if (!getenforce())
+        pr_info("SELinux permissive or disabled, applying KernelSU rules on 4.9\\n");
+
+    if (!backup_sepolicy) {
+        backup_sepolicy = ksu_dup_sepolicy(NULL);
+        if (IS_ERR(backup_sepolicy)) {
+            pr_warn("failed to backup Linux 4.9 sepolicy: %ld\\n", PTR_ERR(backup_sepolicy));
+            backup_sepolicy = NULL;
+        }
+    }
+
+    pol = ksu_dup_sepolicy(NULL);
+    if (IS_ERR(pol)) {
+        pr_err("failed to duplicate Linux 4.9 sepolicy: %ld\\n", PTR_ERR(pol));
+        return;
+    }
+    db = &pol->policydb;
+
+    ksu_type(db, KERNEL_SU_DOMAIN, "domain");
+    ksu_permissive(db, KERNEL_SU_DOMAIN);
+    ksu_typeattribute(db, KERNEL_SU_DOMAIN, "mlstrustedsubject");
+    ksu_typeattribute(db, KERNEL_SU_DOMAIN, "netdomain");
+    ksu_typeattribute(db, KERNEL_SU_DOMAIN, "bluetoothdomain");
+
+    ksu_type(db, KERNEL_SU_FILE, "file_type");
+    ksu_typeattribute(db, KERNEL_SU_FILE, "mlstrustedobject");
+    ksu_allow(db, "domain", KERNEL_SU_FILE, ALL, ALL);
+    ksu_allow(db, KERNEL_SU_DOMAIN, ALL, ALL, ALL);
+
+    if (db->policyvers >= POLICYDB_VERSION_XPERMS_IOCTL) {
+        ksu_allowxperm(db, KERNEL_SU_DOMAIN, ALL, "blk_file", ALL);
+        ksu_allowxperm(db, KERNEL_SU_DOMAIN, ALL, "fifo_file", ALL);
+        ksu_allowxperm(db, KERNEL_SU_DOMAIN, ALL, "chr_file", ALL);
+        ksu_allowxperm(db, KERNEL_SU_DOMAIN, ALL, "file", ALL);
+    }
+
+    ksu_allow(db, "init", KERNEL_SU_DOMAIN, ALL, ALL);
+    ksu_allow(db, "servicemanager", KERNEL_SU_DOMAIN, "dir", "search");
+    ksu_allow(db, "servicemanager", KERNEL_SU_DOMAIN, "dir", "read");
+    ksu_allow(db, "servicemanager", KERNEL_SU_DOMAIN, "file", "open");
+    ksu_allow(db, "servicemanager", KERNEL_SU_DOMAIN, "file", "read");
+    ksu_allow(db, "servicemanager", KERNEL_SU_DOMAIN, "process", "getattr");
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "process", "sigchld");
+
+    ksu_allow(db, "logd", KERNEL_SU_DOMAIN, "dir", "search");
+    ksu_allow(db, "logd", KERNEL_SU_DOMAIN, "file", "read");
+    ksu_allow(db, "logd", KERNEL_SU_DOMAIN, "file", "open");
+    ksu_allow(db, "logd", KERNEL_SU_DOMAIN, "file", "getattr");
+
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "fd", "use");
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "fifo_file", "write");
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "fifo_file", "read");
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "fifo_file", "open");
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "fifo_file", "getattr");
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "unix_stream_socket", "read");
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "unix_stream_socket", "write");
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "unix_stream_socket", "connectto");
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "unix_stream_socket", "getopt");
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "unix_stream_socket", "getattr");
+
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "memfd_file", "execute");
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "memfd_file", "getattr");
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "memfd_file", "map");
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "memfd_file", "read");
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "memfd_file", "write");
+
+    ksu_allow(db, "hwservicemanager", KERNEL_SU_DOMAIN, "dir", "search");
+    ksu_allow(db, "hwservicemanager", KERNEL_SU_DOMAIN, "file", "read");
+    ksu_allow(db, "hwservicemanager", KERNEL_SU_DOMAIN, "file", "open");
+    ksu_allow(db, "hwservicemanager", KERNEL_SU_DOMAIN, "process", "getattr");
+
+    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "binder", ALL);
+    ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "getpgid");
+    ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "sigkill");
+
+    ret = ksu_install_sepolicy_49(db);
+    ksu_destroy_sepolicy(pol);
+    if (ret)
+        pr_err("failed to install Linux 4.9 KernelSU SELinux policy: %d\\n", ret);
+    else
+        pr_info("installed Linux 4.9 KernelSU SELinux policy\\n");
+}
+#else
+"""
+
+    # Replace only the old policy-state section; retain the command definitions below.
+    text = text[:state_start] + compat_rules + text[batch_pos:]
+
+    # Replace the final handle_sepolicy function with a 4.9 implementation.
+    handle_start = text.find("int handle_sepolicy(void __user *user_data, u64 data_len)")
+    if handle_start < 0:
+        raise SystemExit("SukiSU rules.c handle_sepolicy function not found")
+    body_start = text.find("{", handle_start)
+    if body_start < 0:
+        raise SystemExit("SukiSU rules.c handle_sepolicy opening brace not found")
+    depth = 0
+    body_end = -1
+    in_string = False
+    escape = False
+    for pos in range(body_start, len(text)):
+        ch = text[pos]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                body_end = pos + 1
+                break
+    if body_end < 0:
+        raise SystemExit("SukiSU rules.c handle_sepolicy closing brace not found")
+
+    old_handle = text[handle_start:body_end]
+    compat_handle = """#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+static int handle_sepolicy_49(void __user *user_data, u64 data_len)
+{
+    struct selinux_policy *pol;
+    struct policydb *db;
+    struct sepol_batch_cursor cursor;
+    u8 *payload;
+    int ret = 0;
+    int success_cmd_count = 0;
+    u32 cmd_index = 0;
+
+    if (!user_data || !data_len)
+        return -EINVAL;
+    if (data_len > KSU_SEPOLICY_MAX_BATCH_SIZE)
+        return -E2BIG;
+
+    payload = vmalloc((size_t)data_len);
+    if (!payload)
+        return -ENOMEM;
+
+    if (copy_from_user(payload, user_data, (size_t)data_len)) {
+        vfree(payload);
+        return -EFAULT;
+    }
+
+    pol = ksu_dup_sepolicy(NULL);
+    if (IS_ERR(pol)) {
+        vfree(payload);
+        return PTR_ERR(pol);
+    }
+    db = &pol->policydb;
+
+    cursor.cur = payload;
+    cursor.end = payload + (size_t)data_len;
+
+    while (cursor.cur < cursor.end) {
+        struct sepol_data header;
+        const char *args[KSU_SEPOLICY_MAX_ARGS] = { 0 };
+        int expected_argc;
+        u32 arg_index;
+
+        ret = sepol_read_cmd_header(&cursor, &header);
+        if (ret < 0)
+            goto out_drop;
+
+        expected_argc = sepol_expected_argc(header.cmd);
+        if (expected_argc < 0 || expected_argc > KSU_SEPOLICY_MAX_ARGS) {
+            ret = -EINVAL;
+            goto out_drop;
+        }
+
+        for (arg_index = 0; arg_index < (u32)expected_argc; arg_index++) {
+            ret = sepol_read_string(&cursor, &args[arg_index]);
+            if (ret < 0)
+                goto out_drop;
+        }
+
+        ret = apply_one_sepolicy_cmd(db, &header, args);
+        if (ret == 0)
+            success_cmd_count++;
+        else
+            pr_err("sepol: cmd #%u failed, cmd=%u subcmd=%u\\n",
+                   cmd_index, header.cmd, header.subcmd);
+        cmd_index++;
+    }
+
+    if (success_cmd_count == 0) {
+        ret = -EINVAL;
+        goto out_drop;
+    }
+
+    ret = ksu_install_sepolicy_49(db);
+    if (ret < 0)
+        goto out_drop;
+
+    ksu_destroy_sepolicy(pol);
+    vfree(payload);
+    return success_cmd_count;
+
+out_drop:
+    ksu_destroy_sepolicy(pol);
+    vfree(payload);
+    return ret < 0 ? ret : -EINVAL;
+}
+
+int handle_sepolicy(void __user *user_data, u64 data_len)
+{
+    return handle_sepolicy_49(user_data, data_len);
+}
+#else
+"""
+    text = text[:handle_start] + compat_handle + text[body_end:]
+    # Close the temporary preprocessor branch at EOF.
+    if not text.rstrip().endswith("#endif"):
+        text = text.rstrip() + "\n#endif\n"
+
+    rules.write_text(text)
+    print("[sukisu] Applied deep Linux 4.9 SELinux policydb compatibility")
 
 # SukiSU v4.2.0 uses syscall_fn_t on ARM64.
 # Linux 4.9 ARM64 sys_call_table entries use the legacy:
