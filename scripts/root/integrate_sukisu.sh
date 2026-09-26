@@ -298,23 +298,23 @@ if file_wrapper.is_file():
             1,
         )
 
+    # Linux 4.9 uses unsigned int for file_operations::poll.
     fw = fw.replace(
         "static __poll_t ksu_wrapper_poll(struct file *fp, struct poll_table_struct *pts)",
         "static unsigned int ksu_wrapper_poll(struct file *fp, struct poll_table_struct *pts)",
         1,
     )
 
-    # Remove the entire modern iopoll callback block.
-    fw, n = re.subn(
-        r"\n#if LINUX_VERSION_CODE >= KERNEL_VERSION\(6, 1, 0\)\nstatic int ksu_wrapper_iopoll.*?\n#endif\n",
+    # Linux 4.9 has no iopoll callback.
+    fw = re.sub(
+        r"\n#if LINUX_VERSION_CODE >= KERNEL_VERSION\(6, 1, 0\)\n"
+        r"static int ksu_wrapper_iopoll.*?\n#endif\n",
         "\n",
         fw,
         count=1,
         flags=re.S,
     )
-
-    # Remove the iopoll assignment if present.
-    fw, n2 = re.subn(
+    fw = re.sub(
         r"^\s*p->ops\.iopoll\s*=.*\n",
         "",
         fw,
@@ -322,36 +322,100 @@ if file_wrapper.is_file():
         flags=re.M,
     )
 
-    # Remove modern mmap flag assignments.
-    fw, n3 = re.subn(
-        r"\n#if LINUX_VERSION_CODE >= KERNEL_VERSION\(6, 12, 0\)\n.*?\n#else\n.*?\n#endif\n",
-        "\n",
-        fw,
-        count=1,
-        flags=re.S,
-    )
+    # Linux 4.9 has neither fop_flags nor mmap_supported_flags.
+    mmap_start = fw.find("#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)", fw.find("p->ops.mmap"))
+    if mmap_start >= 0:
+        mmap_end = fw.find("#endif", mmap_start)
+        if mmap_end < 0:
+            raise SystemExit("file_wrapper mmap flag compatibility block is unterminated")
+        fw = fw[:mmap_start] + fw[mmap_end + len("#endif"):]
+    else:
+        print("[sukisu] file_wrapper mmap flag block already absent")
 
-    # Remove the remap_file_range wrapper function and the fadvise wrapper.
+    # Linux 4.9 predates remap_file_range() and fadvise() file callbacks.
     remap_start = fw.find("// no REMAP_FILE_DEDUP:")
     release_marker = fw.find("static void ksu_release_file_wrapper", remap_start)
     if remap_start >= 0 and release_marker >= 0:
         fw = fw[:remap_start] + fw[release_marker:]
+    else:
+        print("[sukisu] file_wrapper remap/fadvise section already absent")
 
-    # Remove the two assignments if the wrapper source variant still contains them.
-    fw, n4 = re.subn(
-        r"^\s*p->ops\.remap_file_range\s*=.*\n",
-        "",
-        fw,
-        count=1,
-        flags=re.M,
-    )
-    fw, n5 = re.subn(
-        r"^\s*p->ops\.fadvise\s*=.*\n",
-        "",
-        fw,
-        count=1,
-        flags=re.M,
-    )
+    # The assignments are redundant protection for source variants.
+    fw = re.sub(r"^\s*p->ops\.remap_file_range\s*=.*\n", "", fw, count=1, flags=re.M)
+    fw = re.sub(r"^\s*p->ops\.fadvise\s*=.*\n", "", fw, count=1, flags=re.M)
+
+    # Upstream's pre-5.16 helper calls security_inode_init_security_anon(), which
+    # does not exist in this 4.9 tree. Keep the unique-anon-inode design, but
+    # initialize the inode with the APIs actually present in this kernel.
+    compat_start = fw.find("#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)")
+    compat_end = fw.find("#endif\n\nint ksu_install_file_wrapper", compat_start)
+    if compat_start < 0 or compat_end < 0:
+        raise SystemExit("file_wrapper anon_inode compatibility block boundaries not found")
+
+    compat_block = r"""#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0)
+static struct vfsmount *anon_inode_mnt __read_mostly;
+
+static struct inode *ksu_anon_inode_make_inode(void)
+{
+    if (unlikely(!anon_inode_mnt))
+        return ERR_PTR(-ENODEV);
+    return alloc_anon_inode(anon_inode_mnt->mnt_sb);
+}
+
+static struct file *ksu_anon_inode_create_getfile_compat(
+        const char *name, const struct file_operations *fops,
+        void *priv, int flags, const struct inode *context_inode)
+{
+    struct inode *inode;
+    struct dentry *dentry;
+    struct path path;
+    struct file *file;
+    struct qstr qname = QSTR_INIT(name, strlen(name));
+
+    (void)context_inode;
+
+    if (fops->owner && !try_module_get(fops->owner))
+        return ERR_PTR(-ENOENT);
+
+    inode = ksu_anon_inode_make_inode();
+    if (IS_ERR(inode)) {
+        file = ERR_CAST(inode);
+        goto err_module;
+    }
+
+    dentry = d_alloc_pseudo(anon_inode_mnt->mnt_sb, &qname);
+    if (!dentry) {
+        file = ERR_PTR(-ENOMEM);
+        goto err_inode;
+    }
+
+    path.dentry = dentry;
+    path.mnt = mntget(anon_inode_mnt);
+    d_instantiate(path.dentry, inode);
+
+    file = alloc_file(&path, flags & (O_ACCMODE | O_NONBLOCK), fops);
+    if (IS_ERR(file))
+        goto err_path;
+
+    file->f_mapping = inode->i_mapping;
+    file->private_data = priv;
+    return file;
+
+err_path:
+    path_put(&path);
+    return file;
+
+err_inode:
+    iput(inode);
+err_module:
+    module_put(fops->owner);
+    return file;
+}
+#else
+#define ksu_anon_inode_create_getfile_compat anon_inode_getfile_secure
+#endif
+"""
+    fw = fw[:compat_start] + compat_block + fw[compat_end + len("#endif\n"):]
 
     forbidden = (
         "ksu_wrapper_iopoll",
@@ -370,11 +434,7 @@ if file_wrapper.is_file():
         )
 
     file_wrapper.write_text(fw)
-    print(
-        "[sukisu] Applied Linux 4.9 VFS file_wrapper compatibility "
-        f"(iopoll_block={n}, iopoll_assign={n2}, mmap_block={n3}, "
-        f"remap_assign={n4}, fadvise_assign={n5})"
-    )
+    print("[sukisu] Applied Linux 4.9 VFS file_wrapper compatibility")
 
 bridge_path = kernel_dir / "hook" / "syscall_event_bridge.c"
 if bridge_path.is_file():
