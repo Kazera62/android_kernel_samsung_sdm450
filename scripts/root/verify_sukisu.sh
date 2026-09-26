@@ -69,6 +69,19 @@ if grep -Fq 'selinux_inode(wrapper_inode)' "$KSU_DIR/infra/file_wrapper.c"; then
   die "Linux 4.9 file_wrapper still uses unavailable selinux_inode helper"
 fi
 
+
+test -f "$KSU_DIR/infra/event_queue.h" || die "SukiSU event_queue.h missing"
+test -f "$KSU_DIR/infra/event_queue.c" || die "SukiSU event_queue.c missing"
+grep -Fq 'unsigned int ksu_event_queue_poll' "$KSU_DIR/infra/event_queue.h" || die "Linux 4.9 event_queue poll prototype not adapted"
+grep -Fq 'unsigned int ksu_event_queue_poll' "$KSU_DIR/infra/event_queue.c" || die "Linux 4.9 event_queue poll implementation not adapted"
+if grep -q '__poll_t' "$KSU_DIR/infra/event_queue.h" "$KSU_DIR/infra/event_queue.c"; then
+  die "Linux 4.9 event_queue still references __poll_t"
+fi
+if grep -q 'EPOLLHUP\|EPOLLIN\|EPOLLRDNORM' "$KSU_DIR/infra/event_queue.c"; then
+  die "Linux 4.9 event_queue still references EPOLL* wake masks"
+fi
+
+
 grep -Fq '#include <linux/uaccess.h>' "$KSU_DIR/hook/syscall_event_bridge.c" || die "Linux 4.9 uaccess include missing from syscall event bridge"
 if grep -RqsE '#include <linux/sched/(signal|task|user|task_stack)\.h>' "$KSU_DIR"; then
   die "split linux/sched/*.h include remains in SukiSU tree"
