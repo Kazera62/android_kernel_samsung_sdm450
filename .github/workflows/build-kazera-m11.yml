@@ -224,20 +224,69 @@ jobs:
           test -f KernelSU/kernel/Kbuild
           grep -Fq 'config KSU_SUSFS' KernelSU/kernel/Kconfig
 
-          curl -fsSL "$PATCHES_REPO/$SUKISU_FIXED_REF/Patches/Patch/sukisu_ultra_fixed.patch" \
-            -o .ci-patches/sukisu_ultra_fixed.patch
-          test -s .ci-patches/sukisu_ultra_fixed.patch
+          # SukiSU v4.1.2-f96f6cd2 needs targeted 4.9 compatibility fixes.
+          # The community sukisu_ultra_fixed.patch is from a different SukiSU
+          # tree and does not apply cleanly to this exact commit. Port the
+          # relevant fixes directly so the selected SukiSU commit stays exact.
+          python3 - <<'PY'
+          from pathlib import Path
 
-          (
-            cd KernelSU/kernel
-            patch -p1 --forward --batch < ../../.ci-patches/sukisu_ultra_fixed.patch
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text(encoding="utf-8")
+              if new in s:
+                  return
+              if old not in s:
+                  raise SystemExit(f"Expected SukiSU v4.1.2 source pattern not found: {path}")
+              s = s.replace(old, new, 1)
+              p.write_text(s, encoding="utf-8")
+
+          compat = Path("KernelSU/kernel/infra/kernel_compat.h")
+          s = compat.read_text(encoding="utf-8")
+          if "#define fallthrough" not in s:
+              marker = "\n#endif\n"
+              pos = s.rfind(marker)
+              if pos < 0:
+                  raise SystemExit("Cannot locate final kernel_compat.h #endif")
+              addition = r'''
+          // Backport the upstream fallthrough pseudo-keyword for older compiler/kernel trees.
+          #ifndef __has_attribute
+          #define __has_attribute(x) __GCC4_has_attribute_##x
+          #define __GCC4_has_attribute___fallthrough__ 0
+          #endif
+          #if __has_attribute(__fallthrough__)
+          #define fallthrough __attribute__((__fallthrough__))
+          #else
+          #define fallthrough do { } while (0) /* fallthrough */
+          #endif
+          '''
+              s = s[:pos] + "\n" + addition.strip("\n") + s[pos:]
+              compat.write_text(s, encoding="utf-8")
+
+          replace_once(
+              "KernelSU/kernel/policy/allowlist.c",
+              "#define FILE_MAGIC 0x7f4b5355 // ' KSU', u32",
+              "#include \"infra/kernel_compat.h\"\n\n#define FILE_MAGIC 0x7f4b5355 // ' KSU', u32",
           )
 
-          if find KernelSU -name '*.rej' -o -name '*.orig' | grep -q .; then
-            echo "SukiSU compatibility patch left reject/original files." >&2
-            find KernelSU -name '*.rej' -o -name '*.orig' -print >&2
-            exit 1
-          fi
+          replace_once(
+              "KernelSU/kernel/sulog/event.c",
+              "strncpy_from_user_nofault(arg, (const void __user *)untagged_addr((unsigned long)arg_user), sizeof(arg));",
+              "ksu_strncpy_from_user_nofault(arg, (const void __user *)untagged_addr((unsigned long)arg_user), sizeof(arg));",
+          )
+
+          replace_once(
+              "KernelSU/kernel/sulog/event.c",
+              "#define USER_ARG_NULL ((struct user_arg_ptr){ 0 })",
+              "#define USER_ARG_NULL (&(struct user_arg_ptr){ 0 })",
+          )
+          PY
+
+          grep -Fq '#define fallthrough' KernelSU/kernel/infra/kernel_compat.h
+          grep -Fq '#include "infra/kernel_compat.h"' KernelSU/kernel/policy/allowlist.c
+          grep -Fq 'ksu_strncpy_from_user_nofault(arg' KernelSU/kernel/sulog/event.c
+          grep -Fq '#define USER_ARG_NULL (&(struct user_arg_ptr){ 0 })' KernelSU/kernel/sulog/event.c
+          git -C KernelSU diff --check
 
           rm -rf drivers/kernelsu
           ln -s ../KernelSU/kernel drivers/kernelsu
