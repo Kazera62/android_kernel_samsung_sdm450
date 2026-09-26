@@ -45,6 +45,11 @@ grep -Fq 'KERNEL_SU_RC' "$KSU_DIR/runtime/ksud_integration.c" || die "KERNEL_SU_
 grep -Fq '#elif defined(__aarch64__)' "$KSU_DIR/hook/syscall_hook.h" || die "ARM64 syscall_fn_t compatibility missing"
 grep -Fq 'typedef void (*syscall_fn_t)(void);' "$KSU_DIR/hook/syscall_hook.h" || die "ARM64 syscall_fn_t typedef missing"
 grep -Fq 'ksu_call_original_syscall' "$KSU_DIR/hook/syscall_hook.h" || die "Linux 4.9 syscall ABI shim missing"
+grep -Fq '#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)' "$KSU_DIR/hook/arm64/patch_memory.c" || die "Linux 4.9 patch_memory guard missing"
+grep -Fq 'pgd_t \*pgd;' "$KSU_DIR/hook/arm64/patch_memory.c" || die "Linux 4.9 patch_memory pgd walker missing"
+grep -Fq 'pte_pfn(*pte)' "$KSU_DIR/hook/arm64/patch_memory.c" || die "Linux 4.9 patch_memory pte conversion missing"
+grep -Fq 'memcpy(map, src, len);' "$KSU_DIR/hook/arm64/patch_memory.c" || die "Linux 4.9 patch_memory copy fallback missing"
+
 grep -Fq '#include <linux/uaccess.h>' "$KSU_DIR/hook/syscall_event_bridge.c" || die "Linux 4.9 uaccess include missing from syscall event bridge"
 if grep -RqsE '#include <linux/sched/(signal|task|user|task_stack)\.h>' "$KSU_DIR"; then
   die "split linux/sched/*.h include remains in SukiSU tree"
