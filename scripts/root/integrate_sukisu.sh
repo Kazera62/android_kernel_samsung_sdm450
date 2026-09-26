@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+trap 'rc=$?; echo "[sukisu] ERROR: line ${BASH_LINENO[0]}: command failed: ${BASH_COMMAND} (status=${rc})" >&2; exit ${rc}' ERR
+
 KERNEL_ROOT="${1:-$(pwd)}"
 SUKISU_REPO="${2:-https://github.com/SukiSU-Ultra/SukiSU-Ultra.git}"
 SUKISU_VERSION="${SUKISU_VERSION:-v4.2.0}"
@@ -19,25 +21,49 @@ test -d "$DRIVER_DIR" || die "drivers/ directory not found"
 test -f "$DRIVER_MAKEFILE" || die "drivers/Makefile not found"
 test -f "$DRIVER_KCONFIG" || die "drivers/Kconfig not found"
 test -n "$SUKISU_REF" || die "SukiSU ref is empty"
+[[ "$SUKISU_REF" =~ ^[0-9a-f]{40}$ ]] || die "SukiSU ref is not a full 40-character SHA: $SUKISU_REF"
+[[ "$SUKISU_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "SukiSU version is not a release tag: $SUKISU_VERSION"
 
 rm -rf "$KSU_DIR"
 
-log "Cloning SukiSU-Ultra release: $SUKISU_VERSION"
-git clone --depth=1 --single-branch --branch "$SUKISU_VERSION" "$SUKISU_REPO" "$KSU_DIR"
+log "Cloning SukiSU-Ultra tag: $SUKISU_VERSION"
+git clone --depth=1 --single-branch --branch "$SUKISU_VERSION" "$SUKISU_REPO" "$KSU_DIR" ||
+  die "git clone failed for SukiSU tag $SUKISU_VERSION"
 
-log "Verifying exact SukiSU commit"
-git -C "$KSU_DIR" fetch --depth=1 origin "$SUKISU_REF"
-git -C "$KSU_DIR" checkout --detach "$SUKISU_REF"
+tag_ref="$(git -C "$KSU_DIR" rev-list -n1 "$SUKISU_VERSION" 2>/dev/null || true)"
+test -n "$tag_ref" || die "release tag $SUKISU_VERSION is not present in cloned repository"
+log "SukiSU tag commit: $tag_ref"
+test "$tag_ref" = "$SUKISU_REF" ||
+  die "tag/SHA mismatch: $SUKISU_VERSION points to $tag_ref, expected $SUKISU_REF"
+
+log "Verifying exact SukiSU commit object"
+git -C "$KSU_DIR" fetch --depth=1 origin "$SUKISU_REF" ||
+  die "git fetch failed for SukiSU commit $SUKISU_REF"
+git -C "$KSU_DIR" cat-file -e "$SUKISU_REF^{commit}" ||
+  die "SukiSU commit object is unavailable: $SUKISU_REF"
+git -C "$KSU_DIR" checkout --detach "$SUKISU_REF" ||
+  die "git checkout failed for SukiSU commit $SUKISU_REF"
 
 actual_ref="$(git -C "$KSU_DIR" rev-parse HEAD)"
 log "SukiSU checkout: expected=$SUKISU_REF actual=$actual_ref"
 test "$actual_ref" = "$SUKISU_REF" ||
   die "SukiSU revision mismatch: expected $SUKISU_REF, got $actual_ref"
 
-test -f "$KSU_DIR/kernel/Kconfig" || die "SukiSU kernel/Kconfig missing"
-test -f "$KSU_DIR/kernel/Makefile" || die "SukiSU kernel/Makefile missing"
-test -f "$KSU_DIR/kernel/core/init.c" || die "SukiSU kernel/core/init.c missing"
-test -f "$KSU_DIR/kernel/Kbuild" || die "SukiSU kernel/Kbuild missing"
+require_file() {
+  local file="$1"
+  local label="$2"
+  test -f "$file" || die "$label missing: $file"
+  log "OK: $label: $file"
+}
+
+require_file "$KSU_DIR/kernel/Kconfig" "SukiSU kernel/Kconfig"
+require_file "$KSU_DIR/kernel/Makefile" "SukiSU kernel/Makefile"
+require_file "$KSU_DIR/kernel/Kbuild" "SukiSU kernel/Kbuild"
+require_file "$KSU_DIR/kernel/core/init.c" "SukiSU kernel/core/init.c (v4.2.0 entry point)"
+require_file "$KSU_DIR/kernel/hook/syscall_hook.h" "SukiSU syscall hook header"
+require_file "$KSU_DIR/kernel/hook/syscall_hook_manager.c" "SukiSU syscall hook manager"
+require_file "$KSU_DIR/kernel/hook/syscall_event_bridge.c" "SukiSU syscall event bridge"
+require_file "$KSU_DIR/kernel/hook/arm64/syscall_hook.c" "SukiSU ARM64 syscall hook"
 
 # SukiSU v4.2.0 includes several headers introduced after Linux 4.9.
 # Keep the upstream source pinned, but apply only mechanical 4.9 compatibility
@@ -331,18 +357,17 @@ test -L "$DRIVER_DIR/kernelsu"
 test "$(readlink "$DRIVER_DIR/kernelsu")" = "../KernelSU/kernel"
 
 log "Verifying integrated source"
-test "$(git -C "$KSU_DIR" rev-parse HEAD)" = "$SUKISU_REF"
-test -f "$KSU_DIR/kernel/Kconfig"
-test -f "$KSU_DIR/kernel/Makefile"
+test "$(git -C "$KSU_DIR" rev-parse HEAD)" = "$SUKISU_REF" || die "final SukiSU SHA mismatch"
+grep -Fq 'config KSU' "$KSU_DIR/kernel/Kconfig" || die "KSU config entry missing"
+grep -Fq 'depends on KPROBES && EXT4_FS' "$KSU_DIR/kernel/Kconfig" || die "v4.2.0 KSU dependency changed: expected KPROBES + EXT4_FS"
+grep -Fq 'config KSU_MANUAL_SU' "$KSU_DIR/kernel/Kconfig" || die "KSU_MANUAL_SU config entry missing"
+grep -Fq 'obj-$(CONFIG_KSU) += kernelsu.o' "$KSU_DIR/kernel/Kbuild" || die "SukiSU kernel/Kbuild missing built-in kernelsu target"
+grep -Fq 'ksu_syscall_hook_init();' "$KSU_DIR/kernel/core/init.c" || die "SukiSU kernel init does not initialize syscall hook backend"
+grep -Fq 'ksu_syscall_hook_manager_init();' "$KSU_DIR/kernel/core/init.c" || die "SukiSU kernel init does not initialize syscall hook manager"
+grep -Fq 'register_trace_prio_sys_enter' "$KSU_DIR/kernel/hook/syscall_hook_manager.c" || die "SukiSU tracepoint syscall redirect backend not present"
+grep -Fq 'ksu_dispatcher_nr' "$KSU_DIR/kernel/hook/arm64/syscall_hook.c" || die "SukiSU ARM64 dispatcher backend not present"
 
-if ! grep -Fq 'config KSU' "$KSU_DIR/kernel/Kconfig"; then
-  die "SukiSU KSU config entry missing"
-fi
-if ! grep -Fq 'config KSU_MANUAL_SU' "$KSU_DIR/kernel/Kconfig"; then
-  die "SukiSU KSU_MANUAL_SU config entry missing"
-fi
-
-printf '[sukisu] STATUS release=%s commit=%s kernel=%s\n' \
+printf '[sukisu] STATUS release=%s commit=%s kernel=%s type=Non-GKI hook=Tracepoint-Syscall-Redirect\n' \
   "$SUKISU_VERSION" "$SUKISU_REF" "$(cd "$KSU_DIR" && git describe --tags --always --dirty 2>/dev/null || git rev-parse --short HEAD)"
 
 log "SukiSU-Ultra source integrated successfully"
