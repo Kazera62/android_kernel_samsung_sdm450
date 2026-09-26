@@ -361,7 +361,8 @@ jobs:
           \tstruct linux_binprm *bprm;''',
                'execve call anchor', 'fs/exec.c')
 
-          # fs/open.c: Samsung 4.9 uses SYSCALL_DEFINE3(faccessat).          once('fs/open.c',
+          # fs/open.c: Samsung 4.9 uses SYSCALL_DEFINE3(faccessat).
+          once('fs/open.c',
                '''SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
           {''',
                '''#ifdef CONFIG_KSU
