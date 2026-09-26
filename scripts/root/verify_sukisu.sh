@@ -42,8 +42,9 @@ grep -Fq 'list_del_rcu(&hook->list.list)' "$KSU_DIR/hook/lsm_hook.c" || die "Lin
 
 grep -Fq '#define KSUD_PATH "/data/adb/ksud"' "$KSU_DIR/runtime/ksud.h" || die "KSUD_PATH is not /data/adb/ksud"
 grep -Fq 'KERNEL_SU_RC' "$KSU_DIR/runtime/ksud_integration.c" || die "KERNEL_SU_RC bootstrap is missing"
-grep -Fq '#elif defined(__aarch64__)' "$KSU_DIR/hook/syscall_hook.h" || die "ARM64 syscall_fn_t compatibility missing"
+grep -Eq '#if defined\(__aarch64__\)|#elif defined\(__aarch64__\)' "$KSU_DIR/hook/syscall_hook.h" || die "ARM64 syscall_fn_t compatibility missing"
 grep -Fq 'typedef void (*syscall_fn_t)(void);' "$KSU_DIR/hook/syscall_hook.h" || die "ARM64 syscall_fn_t typedef missing"
+grep -Fq '#include <linux/version.h>' "$KSU_DIR/hook/syscall_hook.h" || die "Linux version header missing from syscall hook header"
 grep -Fq 'ksu_call_original_syscall' "$KSU_DIR/hook/syscall_hook.h" || die "Linux 4.9 syscall ABI shim missing"
 grep -Fq '#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)' "$KSU_DIR/hook/arm64/patch_memory.c" || die "Linux 4.9 patch_memory guard missing"
 grep -Eq 'pgd_t[[:space:]]+\*pgd;' "$KSU_DIR/hook/arm64/patch_memory.c" || die "Linux 4.9 patch_memory pgd walker missing"
