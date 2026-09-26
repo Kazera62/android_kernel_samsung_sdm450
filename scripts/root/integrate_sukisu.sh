@@ -820,10 +820,12 @@ for path in kernel_dir.rglob("*"):
         replaced_io += 1
 print(f"[sukisu] Rewired kernel_read/kernel_write calls through 4.9 helpers in {replaced_io} SukiSU source files")
 
-# Rebuild the compatibility helper block after all global rewrites. This
-# guarantees the shim itself can never be rewritten into a recursive call.
+# Rebuild the Linux 4.9 compatibility helper block after all global rewrites.
+# This removes any previous helper block and writes exactly one canonical copy,
+# making repeated CI/local execution idempotent.
 compat_text = compat_header.read_text()
-io_block = """#ifndef fallthrough
+io_block = '''
+#ifndef fallthrough
 #define fallthrough do { } while (0)
 #endif
 
@@ -841,8 +843,10 @@ static inline void *ksu_kvmalloc(size_t size, gfp_t flags)
 static inline void ksu_kvfree(const void *addr)
 {
     unsigned long v;
+
     if (!addr)
         return;
+
     v = (unsigned long)addr;
 #ifdef CONFIG_MMU
     if (v >= VMALLOC_START && v < VMALLOC_END) {
@@ -874,14 +878,19 @@ static inline ssize_t ksu_kernel_write(struct file *file, const void *buf, size_
     return kernel_write(file, buf, count, pos);
 #endif
 }
-#endiflines = compat_text.splitlines()
-start = next((i for i, line in enumerate(lines) if line.strip() == "#ifndef ksu_kernel_read"), -1)
+#endif
+'''
+lines = compat_text.splitlines()
+
+# Remove every previously injected helper block from the first fallthrough
+# guard through the end of the ksu_kernel_write guard.
+start = next((i for i, line in enumerate(lines) if line.strip() == "#ifndef fallthrough"), -1)
 if start >= 0:
-    write_start = next((i for i in range(start + 1, len(lines)) if lines[i].strip() == "#ifndef ksu_kernel_write"), -1)
+    write_start = next((i for i in range(start, len(lines)) if lines[i].strip() == "#ifndef ksu_kernel_write"), -1)
     if write_start < 0:
         raise SystemExit("kernel_compat.h write helper block not found")
-    count = 0
     end = -1
+    count = 0
     for i in range(write_start + 1, len(lines)):
         if lines[i].strip() == "#endif":
             count += 1
@@ -889,31 +898,32 @@ if start >= 0:
                 end = i + 1
                 break
     if end < 0:
-        raise SystemExit("kernel_compat.h I/O helper block end not found")
-    lines = lines[:start] + io_block.splitlines() + lines[end:]
-else:
-    insert = next((i for i, line in enumerate(lines) if line.strip() == "#ifndef fallthrough"), -1)
-    if insert >= 0:
-        # Put I/O helpers immediately after the fallthrough block.
-        after = insert
-        nend = next((i for i in range(after + 1, len(lines)) if lines[i].strip() == "#endif"), after) + 1
-        lines = lines[:nend] + [""] + io_block.splitlines() + lines[nend:]
-    else:
-        lines = io_block.splitlines() + [""] + lines
+        raise SystemExit("kernel_compat.h write helper block end not found")
+    lines = lines[:start] + lines[end:]
+
+# Insert the canonical block after the standard kernel_compat includes.
+insert = next((i for i, line in enumerate(lines) if line.strip() == "#include <linux/version.h>"), -1)
+if insert < 0:
+    raise SystemExit("kernel_compat.h version include marker missing")
+lines = lines[:insert + 1] + ["", ""] + io_block.splitlines() + [""] + lines[insert + 1:]
 compat_text = "\n".join(lines) + "\n"
 compat_header.write_text(compat_text)
 
+if compat_text.count("#ifndef ksu_kvmalloc") != 1:
+    raise SystemExit("kernel_compat.h ksu_kvmalloc helper is not unique")
+if compat_text.count("#ifndef ksu_kvfree") != 1:
+    raise SystemExit("kernel_compat.h ksu_kvfree helper is not unique")
 if "return ksu_kernel_read(file" in compat_text or "return ksu_kernel_write(file" in compat_text:
     raise SystemExit("Linux 4.9 kernel_compat I/O helper is recursive after normalization")
-print("[sukisu] Normalized Linux 4.9 kernel_read/kernel_write helper block")
+print("[sukisu] Normalized Linux 4.9 compatibility helper block")
+
 # Linux 4.9 app_profile seccomp compatibility.
 # Linux 4.9 has no seccomp.filter_count field and uses put_seccomp_filter()
 # to drop a task's filter reference.
 app_profile = kernel_dir / "policy" / "app_profile.c"
 if app_profile.is_file():
     source = app_profile.read_text()
-    updated = source
-    updated = updated.replace(
+    updated = source.replace(
         "void seccomp_filter_release(struct task_struct *tsk);",
         "void put_seccomp_filter(struct task_struct *tsk);",
         1,
@@ -934,37 +944,6 @@ if app_profile.is_file():
         raise SystemExit("SukiSU app_profile still references newer seccomp_filter_release")
     if "put_seccomp_filter(fake);" not in updated:
         raise SystemExit("SukiSU app_profile Linux 4.9 filter release adapter missing")
-    if updated != source:
-        app_profile.write_text(updated)
-    print("[sukisu] Applied Linux 4.9 app_profile seccomp compatibility")
-
-# Linux 4.9 has only { mode, filter } in struct seccomp and exposes
-# put_seccomp_filter() for dropping a task's filter reference.
-app_profile = kernel_dir / "policy" / "app_profile.c"
-if app_profile.is_file():
-    source = app_profile.read_text()
-    updated = source
-    updated = updated.replace(
-        "void seccomp_filter_release(struct task_struct *tsk);",
-        "void put_seccomp_filter(struct task_struct *tsk);",
-        1,
-    )
-    updated = updated.replace(
-        "    atomic_set(&current->seccomp.filter_count, 0);\n",
-        "",
-        1,
-    )
-    updated = updated.replace(
-        "    seccomp_filter_release(fake);",
-        "    put_seccomp_filter(fake);",
-        1,
-    )
-    if "current->seccomp.filter_count" in updated:
-        raise SystemExit("SukiSU app_profile still references unavailable Linux 4.9 seccomp.filter_count")
-    if "seccomp_filter_release(fake)" in updated:
-        raise SystemExit("SukiSU app_profile still references newer seccomp_filter_release")
-    if "put_seccomp_filter(fake);" not in updated:
-        raise SystemExit("SukiSU app_profile Linux 4.9 filter-release adapter missing")
     if updated != source:
         app_profile.write_text(updated)
     print("[sukisu] Applied Linux 4.9 app_profile seccomp compatibility")
