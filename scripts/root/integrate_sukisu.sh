@@ -239,12 +239,12 @@ typedef asmlinkage long (*ksu_legacy_raw_syscall_t)(unsigned long, unsigned long
                                                     unsigned long, unsigned long,
                                                     unsigned long, unsigned long);
 
-static inline long ksu_call_original_syscall(int nr, struct pt_regs *regs)
+static inline long ksu_call_original_syscall(int nr, const struct pt_regs *regs)
 {
     unsigned long args[6] = { 0 };
     ksu_legacy_raw_syscall_t fn;
 
-    syscall_get_arguments(current, regs, 0, 6, args);
+    syscall_get_arguments(current, (struct pt_regs *)regs, 0, 6, args);
     fn = (ksu_legacy_raw_syscall_t)ksu_syscall_table[nr];
 
     return fn(args[0], args[1], args[2], args[3], args[4], args[5]);
@@ -278,6 +278,17 @@ for rel in ("feature/sucompat.c", "hook/syscall_event_bridge.c"):
         path.write_text(updated)
         replaced_calls += 1
 print(f"[sukisu] Rewired legacy ARM64 syscall-table calls in {replaced_calls} SukiSU source files")
+
+# Linux 4.9 declares strncpy_from_user() from linux/uaccess.h. The upstream
+# bridge used it without including that header because newer trees pull it in
+# transitively.
+const bridge_path = kernel_dir / "hook" / "syscall_event_bridge.c"
+if bridge_path.is_file():
+    bridge_text = bridge_path.read_text()
+    if "#include <linux/uaccess.h>" not in bridge_text:
+        bridge_path.write_text("#include <linux/uaccess.h>\n" + bridge_text)
+        print("[sukisu] Added linux/uaccess.h to syscall_event_bridge.c for 4.9")
+
 
 # Linux 4.9 compatibility checks for the transformed tree.
 import re
