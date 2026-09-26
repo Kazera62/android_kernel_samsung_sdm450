@@ -37,7 +37,7 @@ ok "SukiSU runtime hook backend is Tracepoint Syscall Redirect + ARM64 dispatche
 
 grep -Fq 'exec u:r:' "$KSU_DIR/runtime/ksud_integration.c" || die "KERNEL_SU_RC SELinux exec rule missing"
 grep -Fq 'KERNEL_SU_DOMAIN' "$KSU_DIR/runtime/ksud_integration.c" || die "KernelSU SELinux domain missing"
-grep -Fq '/data/adb/ksud' "$KSU_DIR/runtime/ksud_integration.c" || die "/data/adb/ksud bootstrap path missing"
+grep -Fq '#define KSUD_PATH "/data/adb/ksud"' "$KSU_DIR/runtime/ksud.h" || die "KSUD_PATH is not /data/adb/ksud"
 grep -Fq 'post-fs-data' "$KSU_DIR/runtime/ksud_integration.c" || die "post-fs-data stage missing"
 grep -Fq 'boot-completed' "$KSU_DIR/runtime/ksud_integration.c" || die "boot-completed stage missing"
 ok "ksud bootstrap chain is present"
