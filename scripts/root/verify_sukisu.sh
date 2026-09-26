@@ -105,6 +105,13 @@ fi
 
 grep -Fq 'ksu_kernel_read(struct file' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 kernel_read compatibility helper missing"
 grep -Fq 'ksu_kernel_write(struct file' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 kernel_write compatibility helper missing"
+grep -Fq '#define fallthrough do { } while (0)' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 fallthrough compatibility shim missing"
+if grep -Fq 'return ksu_kernel_read(file' "$KSU_DIR/kernel_compat.h"; then
+  die "ksu_kernel_read compatibility helper is recursive"
+fi
+if grep -Fq 'return ksu_kernel_write(file' "$KSU_DIR/kernel_compat.h"; then
+  die "ksu_kernel_write compatibility helper is recursive"
+fi
 if grep -RqsE '(^|[^A-Za-z0-9_])kernel_read\\(' "$KSU_DIR" --exclude=kernel_compat.h; then
   die "raw kernel_read() call remains outside kernel_compat.h"
 fi
