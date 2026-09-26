@@ -599,18 +599,51 @@ extern long __x64_sys_setns(const struct pt_regs *regs);
     print("[sukisu] Applied Linux 4.9 mount namespace compatibility")
 
 # Linux 4.9 fsnotify compatibility for SukiSU package observer.
-# The 4.9 fsnotify API uses handle_event(), an explicit free_mark callback,
-# fsnotify_add_mark(), and fsnotify_alloc_group(&ops).
+# The pinned v4.2.0 source uses handle_inode_event(), while Linux 4.9
+# fsnotify_ops requires handle_event() with the full callback signature.
 pkg_observer = kernel_dir / "manager" / "pkg_observer.c"
 if pkg_observer.is_file():
     source = pkg_observer.read_text()
     updated = source
-    updated = updated.replace("#include <linux/sched.h>\n", "#include <linux/sched.h>\n", 1)
-    start = updated.find("static int ksu_handle_event(")
-    end = updated.find("\n}\n\nstatic const struct fsnotify_ops ksu_ops", start)
-    if start < 0 or end < 0:
-        raise SystemExit("SukiSU pkg_observer handler boundaries not found")
-    handler = '''static int ksu_handle_inode_event(struct fsnotify_group *group,
+
+    # Find the upstream handler by signature, then locate its closing brace
+    # structurally. This avoids depending on exact whitespace or the next
+    # declaration's spelling.
+    start = updated.find("static int ksu_handle_inode_event(")
+    if start < 0:
+        raise SystemExit("SukiSU pkg_observer upstream handler signature not found")
+
+    body_start = updated.find("{", start)
+    if body_start < 0:
+        raise SystemExit("SukiSU pkg_observer handler opening brace not found")
+
+    depth = 0
+    body_end = -1
+    in_string = False
+    escape = False
+    for pos in range(body_start, len(updated)):
+        ch = updated[pos]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                body_end = pos + 1
+                break
+    if body_end < 0:
+        raise SystemExit("SukiSU pkg_observer handler closing brace not found")
+
+    handler = """static int ksu_handle_event(struct fsnotify_group *group,
                                   struct inode *inode,
                                   struct fsnotify_mark *inode_mark,
                                   struct fsnotify_mark *vfsmount_mark,
@@ -629,25 +662,30 @@ if pkg_observer.is_file():
         return 0;
     if (mask & FS_ISDIR)
         return 0;
-    if (strlen((const char *)file_name) == 13 && !memcmp(file_name, "packages.list", 13)) {
+    if (strlen((const char *)file_name) == 13 &&
+        !memcmp(file_name, "packages.list", 13)) {
         pr_info("packages.list detected: %d\\n", mask);
         track_throne(false);
     }
     return 0;
-}'''
+}"""
+    updated = updated[:start] + handler + updated[body_end:]
 
-    updated = updated[:start] + handler + updated[end+2:]
-    old_ops = '''static const struct fsnotify_ops ksu_ops = {
+    old_ops = """static const struct fsnotify_ops ksu_ops = {
     .handle_inode_event = ksu_handle_inode_event,
-};'''
-
-    new_ops = '''static const struct fsnotify_ops ksu_ops = {
+};"""
+    new_ops = """static const struct fsnotify_ops ksu_ops = {
     .handle_event = ksu_handle_event,
-};'''
-
-    if old_ops in updated:
+};"""
+    if old_ops not in updated:
+        if ".handle_event = ksu_handle_event" not in updated:
+            raise SystemExit("SukiSU pkg_observer fsnotify_ops marker not found")
+    else:
         updated = updated.replace(old_ops, new_ops, 1)
-    old_mark = '''static int add_mark_on_inode(struct inode *inode, u32 mask, struct fsnotify_mark **out)
+
+    # Linux 4.9 requires an explicit mark free callback and uses the 5-arg
+    # fsnotify_add_mark() API.
+    old_mark = """static int add_mark_on_inode(struct inode *inode, u32 mask, struct fsnotify_mark **out)
 {
     struct fsnotify_mark *m;
 
@@ -664,9 +702,8 @@ if pkg_observer.is_file():
     }
     *out = m;
     return 0;
-}'''
-
-    new_mark = '''static void ksu_free_mark(struct fsnotify_mark *mark)
+}"""
+    new_mark = """static void ksu_free_mark(struct fsnotify_mark *mark)
 {
     kfree(mark);
 }
@@ -691,25 +728,25 @@ static int add_mark_on_inode(struct inode *inode, u32 mask, struct fsnotify_mark
     }
     *out = m;
     return 0;
-}'''
-
-    if old_mark not in updated:
+}"""
+    if old_mark in updated:
+        updated = updated.replace(old_mark, new_mark, 1)
+    elif "fsnotify_init_mark(m, ksu_free_mark)" not in updated:
         raise SystemExit("SukiSU pkg_observer mark helper pattern not found")
-    updated = updated.replace(old_mark, new_mark, 1)
-    old_alloc = '''#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+
+    # Linux 4.9 alloc_group() takes only the ops pointer.
+    old_alloc = """#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
     g = fsnotify_alloc_group(&ksu_ops, 0);
 #else
     g = fsnotify_alloc_group(&ksu_ops);
-#endif'''
-
-    new_alloc = '''g = fsnotify_alloc_group(&ksu_ops);'''
-
+#endif"""
+    new_alloc = "g = fsnotify_alloc_group(&ksu_ops);"
     if old_alloc in updated:
         updated = updated.replace(old_alloc, new_alloc, 1)
+
     if updated != source:
         pkg_observer.write_text(updated)
     print("[sukisu] Applied Linux 4.9 fsnotify package-observer compatibility")
-
 # Linux 4.9 VFS I/O compatibility.
 # v4.2.0 uses the post-4.14 kernel_read()/kernel_write() pointer-offset ABI.
 # Linux 4.9 keeps the older kernel_read() value-offset ABI; __kernel_write()
