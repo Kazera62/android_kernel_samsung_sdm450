@@ -22,14 +22,6 @@ on:
         options:
           - "off"
           - "on"
-      root_impl:
-        description: "Pilih integrasi root kernel."
-        type: choice
-        required: true
-        default: "sukisu-ultra"
-        options:
-          - none
-          - sukisu-ultra
       clang:
         description: "Pilih Android Clang toolchain untuk kompilasi kernel."
         type: choice
@@ -117,7 +109,6 @@ concurrency:
 env:
   KERNEL_NAME_INPUT: ${{ inputs.kernel_name || 'Kazera M11/A11' }}
   TELEGRAM_ENABLE: ${{ inputs.telegram || 'off' }}
-  ROOT_IMPL: ${{ inputs.root_impl || 'sukisu-ultra' }}
   CLANG_VERSION: ${{ inputs.clang || 'r383902b' }}
   PERF_PROFILE: ${{ inputs.performance_profile || 'performance' }}
   HZ_CHOICE: ${{ inputs.hz || '1000' }}
@@ -128,9 +119,6 @@ env:
   CORTEX_TUNE: ${{ inputs.cortex_a53_tune || 'on' }}
   ANYKERNEL3_REPO: https://github.com/Kazera62/AnyKernel3.git
   ANYKERNEL3_REF: 0ab72a279369da34644860a256eba3f2e8142dad
-  SUKISU_REPO: https://github.com/SukiSU-Ultra/SukiSU-Ultra.git
-  SUKISU_VERSION: v4.2.0
-  SUKISU_REF: 85eb4a95b8a61d756ecf53b9c5785e48e1b15039
   ARCH: arm64
   SUBARCH: arm64
   CC: clang
@@ -198,25 +186,6 @@ jobs:
           aarch64-linux-gnu-ld --version
           aarch64-linux-gnu-gcc --version | head -n 1
           arm-linux-gnueabi-gcc --version | head -n 1
-      - name: Integrate selected root implementation
-        if: env.ROOT_IMPL == 'sukisu-ultra'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          trap 'status=$?; echo "::error file=scripts/root/integrate_sukisu.sh,line=${BASH_LINENO[0]}::SukiSU integration failed with status $status"; exit $status' ERR
-
-          test -f scripts/root/integrate_sukisu.sh
-          test -f scripts/root/verify_sukisu.sh
-
-          bash -x scripts/root/integrate_sukisu.sh \
-            "$GITHUB_WORKSPACE" \
-            "$SUKISU_REPO" \
-            "$SUKISU_REF"
-
-          bash -x scripts/root/verify_sukisu.sh \
-            "$GITHUB_WORKSPACE" \
-            "$SUKISU_REF"
-
       - name: Validate kernel feature support
         shell: bash
         run: |
@@ -409,22 +378,6 @@ jobs:
 
           scripts/config --file out/.config --disable PSI
 
-          # SukiSU-Ultra v4.2.0 requires KPROBES for its kernel hook backend.
-          # KPM is intentionally disabled and is not exposed as a workflow option.
-          if [ "$ROOT_IMPL" = "sukisu-ultra" ]; then
-            scripts/config --file out/.config --enable KPROBES
-            scripts/config --file out/.config --enable HAVE_KPROBES
-            scripts/config --file out/.config --enable EXT4_FS
-            scripts/config --file out/.config --enable KSU
-            scripts/config --file out/.config --enable KSU_MANUAL_SU
-            scripts/config --file out/.config --disable KSU_DEBUG || true
-            scripts/config --file out/.config --disable KPM || true
-          else
-            scripts/config --file out/.config --disable KSU || true
-            scripts/config --file out/.config --disable KPM || true
-            scripts/config --file out/.config --disable KPROBES || true
-          fi
-
           if [ "$CORTEX_TUNE" = "on" ]; then
             KCFLAGS="-mcpu=cortex-a53+crypto"
           else
@@ -434,26 +387,7 @@ jobs:
 
           make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" olddefconfig
 
-          grep -E "^(CONFIG_KSU=|CONFIG_KSU_MANUAL_SU=|CONFIG_KPROBES=|CONFIG_HAVE_KPROBES=|CONFIG_KPM=|CONFIG_KALLSYMS_ALL=|CONFIG_HZ=|CONFIG_HZ_|CONFIG_CPU_FREQ_DEFAULT_GOV=|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_IOSCHED=|CONFIG_ZRAM_WRITEBACK=|CONFIG_PREEMPT|CONFIG_PSI=|CONFIG_LOCALVERSION=)" out/.config || true
-
-          case "$ROOT_IMPL" in
-            none)
-              test "$(grep -c "^CONFIG_KSU=y$" out/.config || true)" -eq 0
-              test "$(grep -c "^CONFIG_KPM=y$" out/.config || true)" -eq 0
-              ;;
-            sukisu-ultra)
-              test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
-              test "$(grep -c "^CONFIG_KSU_MANUAL_SU=y$" out/.config)" -eq 1
-              test "$(grep -c "^CONFIG_KPROBES=y$" out/.config)" -eq 1
-              test "$(grep -c "^CONFIG_HAVE_KPROBES=y$" out/.config)" -eq 1
-              test "$(grep -c "^CONFIG_KPM=y$" out/.config || true)" -eq 0
-              ;;
-            *)
-              echo "Unsupported root implementation: $ROOT_IMPL" >&2
-              exit 1
-              ;;
-          esac
-
+          grep -E "^(CONFIG_KSU=|CONFIG_KSU_MANUAL_HOOK=|CONFIG_KSU_SUSFS=|CONFIG_KPM=|CONFIG_KPROBES=|CONFIG_KALLSYMS_ALL=|CONFIG_HZ=|CONFIG_HZ_|CONFIG_CPU_FREQ_DEFAULT_GOV=|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_IOSCHED=|CONFIG_ZRAM_WRITEBACK=|CONFIG_PREEMPT|CONFIG_PSI=|CONFIG_LOCALVERSION=)" out/.config || true
           test "$(grep -c "^CONFIG_ARCH_ZQL1871=y$" out/.config)" -eq 1
           test "$(grep -c "^CONFIG_ARCH_SDM450=y$" out/.config)" -eq 1
           test "$(grep -c "^CONFIG_ARCH_MSM8953=y$" out/.config)" -eq 1
@@ -488,14 +422,6 @@ jobs:
           {
             echo "kernel_name=$KERNEL_NAME_INPUT"
             echo "kernel_name_slug=$KERNEL_NAME_SLUG"
-            echo "root_impl=$ROOT_IMPL"
-            if [ "$ROOT_IMPL" = "sukisu-ultra" ]; then
-              echo "sukisu_version=$SUKISU_VERSION"
-              echo "sukisu_ref=$SUKISU_REF"
-            else
-              echo "sukisu_version=n/a"
-              echo "sukisu_ref=n/a"
-            fi
             echo "clang=$CLANG_VERSION"
             echo "performance_profile=$PERF_PROFILE"
             echo "hz=$HZ_CHOICE"
@@ -641,9 +567,6 @@ jobs:
           fi
 
 
-          TELEGRAM_SUKISU_VERSION="n/a"
-          [ "$ROOT_IMPL" = "sukisu-ultra" ] && TELEGRAM_SUKISU_VERSION="$SUKISU_VERSION"
-          CAPTION="$(basename "$ZIP_PATH") | root=$ROOT_IMPL | SukiSU=$TELEGRAM_SUKISU_VERSION"
           RESPONSE="$(curl -fsS --retry 3 --retry-all-errors \
             -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
             -F "chat_id=$TELEGRAM_CHAT_ID" \
