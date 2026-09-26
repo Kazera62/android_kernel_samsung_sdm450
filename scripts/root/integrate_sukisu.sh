@@ -543,6 +543,29 @@ if event_queue_h.is_file() or event_queue_c.is_file():
             path.write_text(updated)
     print("[sukisu] Applied Linux 4.9 poll/event_queue compatibility")
 
+# Linux 4.9 seccomp-cache compatibility.
+# v4.2.0 names the native syscall bitmap with a newer helper macro and relies
+# on refcount_t being visible transitively. Linux 4.9 provides both primitives
+# directly, so expose them explicitly without changing cache behavior.
+seccomp_cache = kernel_dir / "infra" / "seccomp_cache.c"
+if seccomp_cache.is_file():
+    source = seccomp_cache.read_text()
+    updated = source
+    if "#include <linux/refcount.h>" not in updated:
+        updated = updated.replace("#include <linux/version.h>", "#include <linux/version.h>\n#include <linux/refcount.h>\n", 1)
+    native_compat = """#ifndef SECCOMP_ARCH_NATIVE_NR
+#define SECCOMP_ARCH_NATIVE_NR __NR_syscalls
+#endif
+"""
+    if "SECCOMP_ARCH_NATIVE_NR __NR_syscalls" not in updated:
+        include_anchor = '#include "infra/seccomp_cache.h"\n'
+        if include_anchor not in updated:
+            raise SystemExit("seccomp_cache.c include anchor not found")
+        updated = updated.replace(include_anchor, include_anchor + "\n" + native_compat, 1)
+    if updated != source:
+        seccomp_cache.write_text(updated)
+    print("[sukisu] Applied Linux 4.9 seccomp_cache compatibility")
+
 # Linux 4.9 compatibility checks for the transformed tree.
 import re
 raw_nofault = []
