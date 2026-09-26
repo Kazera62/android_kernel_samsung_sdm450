@@ -484,8 +484,7 @@ new_block = """#else
             hook->replacement);
 #endif
 """
-text = text[:start] + new_block + text[end + len("#endif
-"):]
+text = text[:start] + new_block + text[end + len("#endif\n"):]
 
 old_unhook = """#else
     if (hook->entry == &hook->list) {
