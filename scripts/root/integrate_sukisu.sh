@@ -1500,9 +1500,10 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
 #else
 """
     text = text[:handle_start] + compat_handle + text[body_end:]
-    # Close the temporary preprocessor branch at EOF.
-    if not text.rstrip().endswith("#endif"):
-        text = text.rstrip() + "\n#endif\n"
+    # Close both dedicated Linux 4.9 conditional regions:
+    # the policy-state branch and the handle_sepolicy branch.
+    trailing = text.rstrip()
+    text = trailing + "\n#endif\n#endif\n"
 
     rules.write_text(text)
     print("[sukisu] Applied deep Linux 4.9 SELinux policydb compatibility")
