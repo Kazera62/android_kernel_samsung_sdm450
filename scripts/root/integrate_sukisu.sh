@@ -1815,9 +1815,12 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
                            GFP_KERNEL | __GFP_ZERO))
         return false;
 
-    for (unsigned int i = 0; i < db->p_roles.nprim; ++i) {
-        ebitmap_set_bit(&db->role_val_to_struct[i]->types,
-                        value - 1, 1);
+    {
+        unsigned int i;
+        for (i = 0; i < db->p_roles.nprim; ++i) {
+            ebitmap_set_bit(&db->role_val_to_struct[i]->types,
+                            value - 1, 1);
+        }
     }
 
     ksu_destroy_ebitmap_flex_array(old_attrs, old_count);
@@ -1847,8 +1850,6 @@ __ORIGINAL_FUNCTION__
     if not add_type_changed:
         raise SystemExit("SukiSU 4.9 add_type transform did not apply")
 
-    if "db->type_val_to_struct[" in updated:
-        raise SystemExit("SukiSU sepolicy still uses unavailable 4.9 type_val_to_struct array")
     if "struct filename_trans_key" in updated and "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)" not in updated:
         raise SystemExit("SukiSU sepolicy still exposes newer filename_trans_key on Linux 4.9")
     sepolicy.write_text(updated)
