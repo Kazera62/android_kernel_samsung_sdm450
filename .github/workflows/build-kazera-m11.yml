@@ -319,63 +319,28 @@ jobs:
               "KSU_VERSION_FULL := v4.1.2-f96f6cd2@builtin",
           )
 
+          # current_sid() is added below in ksu.c after SELinux objsec.h is included.
+          PY
+
           # SukiSU manual-hook compatibility bridge for this Samsung 4.9 tree.
           cat > KernelSU/kernel/sukisu_fix.c <<'EOF'
-          #include <linux/types.h>
-          #include <linux/module.h>
-          #include <linux/kernel.h>
-          #include <linux/jump_label.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/jump_label.h>
 
-          DEFINE_STATIC_KEY_FALSE(ksu_input_hook_key_false);
-          EXPORT_SYMBOL(ksu_input_hook_key_false);
+DEFINE_STATIC_KEY_FALSE(ksu_input_hook_key_false);
+EXPORT_SYMBOL(ksu_input_hook_key_false);
 
-          DEFINE_STATIC_KEY_FALSE(ksu_init_rc_hook_key_false);
-          EXPORT_SYMBOL(ksu_init_rc_hook_key_false);
+DEFINE_STATIC_KEY_FALSE(ksu_init_rc_hook_key_false);
+EXPORT_SYMBOL(ksu_init_rc_hook_key_false);
+EOF
 
-          int ksu_vfs_read_hook(void *a, void *b, void *c, void *d)
-          {
-              return 0;
-          }
-          EXPORT_SYMBOL(ksu_vfs_read_hook);
-
-          int ksu_input_hook(void *a, void *b, void *c)
-          {
-              return 0;
-          }
-          EXPORT_SYMBOL(ksu_input_hook);
-
-          extern int ksu_handle_execveat(int *fd, void **filename_ptr, void *argv, void *envp, int *flags);
-
-          int ksu_execveat_hook(int *fd, void **filename_ptr, void *argv, void *envp, int *flags)
-          {
-              return ksu_handle_execveat(fd, filename_ptr, argv, envp, flags);
-          }
-          EXPORT_SYMBOL(ksu_execveat_hook);
-
-          bool ksu_is_init_rc_hook_enabled __aligned(4) = false;
-          EXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);
-          EOF
-
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("KernelSU/kernel/Makefile")
-          s = p.read_text(encoding="utf-8")
-          old = "obj-$(CONFIG_KSU) := ksu.o"
-          new = "obj-$(CONFIG_KSU) := ksu.o sukisu_fix.o"
-          if new not in s:
-              if old not in s:
-                  raise SystemExit("SukiSU Makefile obj anchor missing")
-              s = s.replace(old, new, 1)
-              p.write_text(s, encoding="utf-8")
-          PY
+          sed -i 's/^obj-$(CONFIG_KSU) := ksu\.o$/obj-$(CONFIG_KSU) := ksu.o sukisu_fix.o/' KernelSU/kernel/Makefile
 
           test -s KernelSU/kernel/sukisu_fix.c
           grep -Fq 'DEFINE_STATIC_KEY_FALSE(ksu_input_hook_key_false);' KernelSU/kernel/sukisu_fix.c
           grep -Fq 'DEFINE_STATIC_KEY_FALSE(ksu_init_rc_hook_key_false);' KernelSU/kernel/sukisu_fix.c
           grep -Fq 'obj-$(CONFIG_KSU) := ksu.o sukisu_fix.o' KernelSU/kernel/Makefile
-          # current_sid() is added below in ksu.c after SELinux objsec.h is included.
-          PY
-
           grep -Fq '#define fallthrough' KernelSU/kernel/infra/kernel_compat.h
           grep -Fq '#include "infra/kernel_compat.h"' KernelSU/kernel/policy/allowlist.c
           grep -Fq 'ksu_strncpy_from_user_nofault(arg' KernelSU/kernel/sulog/event.c
