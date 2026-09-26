@@ -1,3 +1,8 @@
+test -f "$KSU_DIR/sulog/event.c" || die "SukiSU sulog event.c missing"
+if grep -Fq '<linux/minmax.h>' "$KSU_DIR/sulog/event.c"; then
+  die "Linux 4.9 sulog still includes unavailable linux/minmax.h"
+fi
+grep -Fq '#include <linux/kernel.h>' "$KSU_DIR/sulog/event.c" || die "Linux 4.9 sulog kernel.h include missing"
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
