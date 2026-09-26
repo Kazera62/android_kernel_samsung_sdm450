@@ -1012,6 +1012,18 @@ if sulog_event.is_file():
         sulog_event.write_text(updated)
     print("[sukisu] Applied Linux 4.9 sulog header compatibility")
 
+# Linux 4.9 sulog fd poll compatibility.
+# Linux 4.9 file_operations.poll returns unsigned int and has no __poll_t.
+sulog_fd = kernel_dir / "sulog" / "fd.c"
+if sulog_fd.is_file():
+    source = sulog_fd.read_text()
+    updated = source.replace("static __poll_t ksu_sulog_poll(", "static unsigned int ksu_sulog_poll(", 1)
+    if "__poll_t" in updated:
+        raise SystemExit("SukiSU sulog fd still references unavailable __poll_t")
+    if updated != source:
+        sulog_fd.write_text(updated)
+    print("[sukisu] Applied Linux 4.9 sulog fd poll compatibility")
+
 # Linux 4.9 SELinux compatibility.
 # The pinned SukiSU source targets newer LSM wrappers and the selinux_state
 # object. Vendor Linux 4.9 exposes SELinux credentials as cred->security,
