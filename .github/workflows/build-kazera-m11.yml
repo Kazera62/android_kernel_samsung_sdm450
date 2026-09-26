@@ -197,6 +197,26 @@ jobs:
           aarch64-linux-gnu-ld --version
           aarch64-linux-gnu-gcc --version | head -n 1
           arm-linux-gnueabi-gcc --version | head -n 1
+      - name: Preflight root integration scripts
+        if: env.ROOT_IMPL == 'sukisu-ultra'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n scripts/root/integrate_sukisu.sh
+          bash -n scripts/root/verify_sukisu.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          src = Path("scripts/root/integrate_sukisu.sh").read_text()
+          blocks = []
+          for tag in ("PY", "PYVER"):
+              blocks.extend(re.findall(r"<<'" + tag + r"'\n(.*?)\n" + tag + r"\s*$", src, re.S | re.M))
+          if len(blocks) < 2:
+              raise SystemExit("failed to extract both embedded Python blocks from integrate_sukisu.sh")
+          for idx, block in enumerate(blocks, 1):
+              compile(block, f"integrate_sukisu.sh:heredoc:{idx}", "exec")
+          print(f"Preflight OK: bash syntax + {len(blocks)} embedded Python heredocs")
+          PY
       - name: Integrate selected root implementation
         if: env.ROOT_IMPL == 'sukisu-ultra'
         shell: bash
