@@ -130,6 +130,7 @@ env:
   ANYKERNEL3_REF: 0ab72a279369da34644860a256eba3f2e8142dad
   SUKISU_REPO: https://github.com/SukiSU-Ultra/SukiSU-Ultra.git
   SUKISU_VERSION: v4.2.0
+  SUKISU_DISPLAY_VERSION: V4.2.0_40900
   SUKISU_REF: 85eb4a95b8a61d756ecf53b9c5785e48e1b15039
   ARCH: arm64
   SUBARCH: arm64
@@ -512,7 +513,7 @@ jobs:
             echo "susfs=OFF (Phase 1 baseline)"
             echo "kpm=OFF"
             if [ "$ROOT_IMPL" = "sukisu-ultra" ]; then
-              echo "sukisu_version=$SUKISU_VERSION"
+              echo "sukisu_version=$SUKISU_DISPLAY_VERSION"
               echo "sukisu_ref=$SUKISU_REF"
             else
               echo "sukisu_version=n/a"
@@ -664,7 +665,7 @@ jobs:
 
 
           TELEGRAM_SUKISU_VERSION="n/a"
-          [ "$ROOT_IMPL" = "sukisu-ultra" ] && TELEGRAM_SUKISU_VERSION="$SUKISU_VERSION"
+          [ "$ROOT_IMPL" = "sukisu-ultra" ] && TELEGRAM_SUKISU_VERSION="$SUKISU_DISPLAY_VERSION"
           CAPTION="$(basename "$ZIP_PATH") | root=$ROOT_IMPL | SukiSU=$TELEGRAM_SUKISU_VERSION"
           RESPONSE="$(curl -fsS --retry 3 --retry-all-errors \
             -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
