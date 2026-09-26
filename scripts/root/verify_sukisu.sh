@@ -71,6 +71,14 @@ if grep -Fq 'selinux_inode(wrapper_inode)' "$KSU_DIR/infra/file_wrapper.c"; then
 fi
 
 
+test -f "$KSU_DIR/policy/app_profile.c" || die "SukiSU app_profile.c missing"
+if grep -Fq 'current->seccomp.filter_count' "$KSU_DIR/policy/app_profile.c"; then
+  die "Linux 4.9 app_profile still uses unavailable seccomp.filter_count"
+fi
+if grep -Fq 'seccomp_filter_release(fake)' "$KSU_DIR/policy/app_profile.c"; then
+  die "Linux 4.9 app_profile still uses newer seccomp_filter_release"
+fi
+grep -Fq 'put_seccomp_filter(fake);' "$KSU_DIR/policy/app_profile.c" || die "Linux 4.9 app_profile filter release adapter missing"
 test -f "$KSU_DIR/infra/seccomp_cache.c" || die "SukiSU seccomp_cache.c missing"
 grep -Fq '#include <linux/refcount.h>' "$KSU_DIR/infra/seccomp_cache.c" || die "Linux 4.9 refcount header missing from seccomp_cache"
 grep -Fq 'SECCOMP_ARCH_NATIVE_NR __NR_syscalls' "$KSU_DIR/infra/seccomp_cache.c" || die "Linux 4.9 native seccomp syscall-count shim missing"
