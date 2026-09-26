@@ -630,6 +630,66 @@ if pkg_observer.is_file():
         pkg_observer.write_text(updated)
     print("[sukisu] Applied Linux 4.9 fsnotify package-observer compatibility")
 
+# Linux 4.9 VFS I/O compatibility.
+# v4.2.0 uses the post-4.14 kernel_read()/kernel_write() pointer-offset ABI.
+# Linux 4.9 keeps the older kernel_read() value-offset ABI; __kernel_write()
+# already provides the pointer-offset form, so preserve SukiSU's semantics.
+compat_header = kernel_dir / "kernel_compat.h"
+if compat_header.is_file():
+    text = compat_header.read_text()
+    io_helpers = r'''
+#ifndef ksu_kernel_read
+static inline ssize_t ksu_kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+    return kernel_read(file, *pos, buf, count);
+#else
+    return kernel_read(file, buf, count, pos);
+#endif
+}
+#endif
+
+#ifndef ksu_kernel_write
+static inline ssize_t ksu_kernel_write(struct file *file, const void *buf, size_t count, loff_t *pos)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+    return __kernel_write(file, buf, count, pos);
+#else
+    return kernel_write(file, buf, count, pos);
+#endif
+}
+#endif
+
+'''
+    if "ksu_kernel_read(struct file" not in text:
+        anchor = "#include <linux/version.h>\n"
+        if anchor not in text:
+            raise SystemExit("kernel_compat.h version include anchor missing")
+        text = text.replace(anchor, anchor + io_helpers, 1)
+        compat_header.write_text(text)
+        print("[sukisu] Added Linux 4.9 kernel_read/kernel_write compatibility helpers")
+
+import re
+replaced_io = 0
+for path in kernel_dir.rglob("*"):
+    if path.suffix not in {".c", ".h"} or not path.is_file():
+        continue
+    source = path.read_text()
+    updated = re.sub(r"(?<![A-Za-z0-9_])kernel_read\\(", "ksu_kernel_read(", source)
+    updated = re.sub(r"(?<![A-Za-z0-9_])kernel_write\\(", "ksu_kernel_write(", updated)
+    if updated != source:
+        path.write_text(updated)
+        replaced_io += 1
+print(f"[sukisu] Rewired kernel_read/kernel_write calls through 4.9 helpers in {replaced_io} SukiSU source files")
+
+# Ensure every translation unit using the I/O helpers includes the compatibility header.
+for path in kernel_dir.rglob("*.c"):
+    if not path.is_file():
+        continue
+    source = path.read_text()
+    if ("ksu_kernel_read(" in source or "ksu_kernel_write(" in source) and '#include "kernel_compat.h"' not in source:
+        path.write_text('#include "kernel_compat.h"\n' + source)
+
 # Linux 4.9 compatibility checks for the transformed tree.
 import re
 raw_nofault = []
