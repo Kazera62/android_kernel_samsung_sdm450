@@ -92,6 +92,14 @@ if grep -q '__arm64_sys_setns\|__x64_sys_setns' "$KSU_DIR/infra/su_mount_ns.c"; 
   die "Linux 4.9 su_mount_ns still references newer __*_sys_setns entry points"
 fi
 
+test -f "$KSU_DIR/manager/pkg_observer.c" || die "SukiSU pkg_observer.c missing"
+grep -Fq '.handle_event = ksu_handle_inode_event' "$KSU_DIR/manager/pkg_observer.c" || die "Linux 4.9 fsnotify handle_event adapter missing"
+grep -Fq 'fsnotify_init_mark(m, ksu_free_mark)' "$KSU_DIR/manager/pkg_observer.c" || die "Linux 4.9 fsnotify free_mark adapter missing"
+grep -Fq 'fsnotify_add_mark(m, g, inode, NULL, 0)' "$KSU_DIR/manager/pkg_observer.c" || die "Linux 4.9 fsnotify add_mark adapter missing"
+if grep -q 'handle_inode_event\|fsnotify_add_inode_mark\|fsnotify_init_mark(m, g)' "$KSU_DIR/manager/pkg_observer.c"; then
+  die "Linux 4.9 pkg_observer still references newer fsnotify API"
+fi
+
 test -f "$KSU_DIR/infra/event_queue.h" || die "SukiSU event_queue.h missing"
 test -f "$KSU_DIR/infra/event_queue.c" || die "SukiSU event_queue.c missing"
 grep -Fq 'unsigned int ksu_event_queue_poll' "$KSU_DIR/infra/event_queue.h" || die "Linux 4.9 event_queue poll prototype not adapted"
