@@ -115,6 +115,10 @@ grep -Fq 'ksu_kernel_read(struct file' "$KSU_DIR/kernel_compat.h" || die "Linux 
 grep -Fq 'ksu_kernel_write(struct file' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 kernel_write compatibility helper missing"
 grep -Fq 'ksu_kvmalloc(size_t size' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 kvmalloc compatibility helper missing"
 grep -Fq 'ksu_kvfree(const void *addr)' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 kvfree compatibility helper missing"
+grep -Fq 'v >= VMALLOC_START && v < VMALLOC_END' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 vmalloc range check missing"
+grep -Fq 'return __vmalloc(size, flags, PAGE_KERNEL);' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 __vmalloc fallback missing"
+grep -Fq '#include <linux/vmalloc.h>' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 vmalloc header missing"
+grep -Fq '#include <asm/pgtable.h>' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 VMALLOC range header missing"
 if grep -RqsE '(^|[^A-Za-z0-9_])kvmalloc\(' "$KSU_DIR" --exclude=kernel_compat.h; then
   die "raw kvmalloc() call remains outside kernel_compat.h"
 fi
