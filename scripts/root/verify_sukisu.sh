@@ -93,10 +93,12 @@ if grep -q '__arm64_sys_setns\|__x64_sys_setns' "$KSU_DIR/infra/su_mount_ns.c"; 
 fi
 
 test -f "$KSU_DIR/manager/pkg_observer.c" || die "SukiSU pkg_observer.c missing"
-grep -Fq '.handle_event = ksu_handle_inode_event' "$KSU_DIR/manager/pkg_observer.c" || die "Linux 4.9 fsnotify handle_event adapter missing"
+grep -Fq '.handle_event = ksu_handle_event' "$KSU_DIR/manager/pkg_observer.c" || die "Linux 4.9 fsnotify handle_event adapter missing"
 grep -Fq 'fsnotify_init_mark(m, ksu_free_mark)' "$KSU_DIR/manager/pkg_observer.c" || die "Linux 4.9 fsnotify free_mark adapter missing"
 grep -Fq 'fsnotify_add_mark(m, g, inode, NULL, 0)' "$KSU_DIR/manager/pkg_observer.c" || die "Linux 4.9 fsnotify add_mark adapter missing"
-if grep -q 'handle_inode_event\|fsnotify_add_inode_mark\|fsnotify_init_mark(m, g)' "$KSU_DIR/manager/pkg_observer.c"; then
+if grep -Fq 'fsnotify_add_inode_mark' "$KSU_DIR/manager/pkg_observer.c" || \
+   grep -Fq 'fsnotify_init_mark(m, g)' "$KSU_DIR/manager/pkg_observer.c" || \
+   grep -Fq '.handle_inode_event =' "$KSU_DIR/manager/pkg_observer.c"; then
   die "Linux 4.9 pkg_observer still references newer fsnotify API"
 fi
 
