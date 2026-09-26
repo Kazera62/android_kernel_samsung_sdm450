@@ -777,7 +777,8 @@ replaced_twa = 0
 for rel in ("policy/allowlist.c", "supercall/supercall.c"):
     path = kernel_dir / rel
     if not path.is_file():
-        continue    source = path.read_text()
+        continue
+    source = path.read_text()
     updated = source.replace("TWA_RESUME", "true")
     if updated != source:
         path.write_text(updated)
