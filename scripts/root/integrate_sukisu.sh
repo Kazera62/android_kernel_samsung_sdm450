@@ -782,8 +782,6 @@ static inline ssize_t ksu_kernel_write(struct file *file, const void *buf, size_
 #endif
 
 '''
-    if "return ksu_kernel_read(file" in text or "return ksu_kernel_write(file" in text:
-        raise SystemExit("generated kernel_compat.h I/O helper became recursive")
     if "ksu_kernel_read(struct file" not in text:
         anchor = "#include <linux/version.h>\n"
         if anchor not in text:
@@ -807,6 +805,62 @@ for path in kernel_dir.rglob("*"):
         replaced_io += 1
 print(f"[sukisu] Rewired kernel_read/kernel_write calls through 4.9 helpers in {replaced_io} SukiSU source files")
 
+# Rebuild the compatibility helper block after all global rewrites. This
+# guarantees the shim itself can never be rewritten into a recursive call.
+compat_text = compat_header.read_text()
+io_block = """#ifndef ksu_kernel_read
+static inline ssize_t ksu_kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+    return kernel_read(file, *pos, buf, count);
+#else
+    return kernel_read(file, buf, count, pos);
+#endif
+}
+#endif
+
+#ifndef ksu_kernel_write
+static inline ssize_t ksu_kernel_write(struct file *file, const void *buf, size_t count, loff_t *pos)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+    return __kernel_write(file, buf, count, pos);
+#else
+    return kernel_write(file, buf, count, pos);
+#endif
+}
+#endif"""
+lines = compat_text.splitlines()
+start = next((i for i, line in enumerate(lines) if line.strip() == "#ifndef ksu_kernel_read"), -1)
+if start >= 0:
+    write_start = next((i for i in range(start + 1, len(lines)) if lines[i].strip() == "#ifndef ksu_kernel_write"), -1)
+    if write_start < 0:
+        raise SystemExit("kernel_compat.h write helper block not found")
+    count = 0
+    end = -1
+    for i in range(write_start + 1, len(lines)):
+        if lines[i].strip() == "#endif":
+            count += 1
+            if count == 2:
+                end = i + 1
+                break
+    if end < 0:
+        raise SystemExit("kernel_compat.h I/O helper block end not found")
+    lines = lines[:start] + io_block.splitlines() + lines[end:]
+else:
+    insert = next((i for i, line in enumerate(lines) if line.strip() == "#ifndef fallthrough"), -1)
+    if insert >= 0:
+        # Put I/O helpers immediately after the fallthrough block.
+        after = insert
+        nend = next((i for i in range(after + 1, len(lines)) if lines[i].strip() == "#endif"), after) + 1
+        lines = lines[:nend] + [""] + io_block.splitlines() + lines[nend:]
+    else:
+        lines = io_block.splitlines() + [""] + lines
+compat_text = "\n".join(lines) + "\n"
+compat_header.write_text(compat_text)
+
+if "return ksu_kernel_read(file" in compat_text or "return ksu_kernel_write(file" in compat_text:
+    raise SystemExit("Linux 4.9 kernel_compat I/O helper is recursive after normalization")
+print("[sukisu] Normalized Linux 4.9 kernel_read/kernel_write helper block")
 # Ensure every translation unit using the I/O helpers includes the compatibility header.
 for path in kernel_dir.rglob("*.c"):
     if not path.is_file():
