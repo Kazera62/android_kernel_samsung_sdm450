@@ -49,6 +49,22 @@ grep -Fq '#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)' "$KSU_DIR/hook/arm64
 grep -Eq 'pgd_t[[:space:]]+\*pgd;' "$KSU_DIR/hook/arm64/patch_memory.c" || die "Linux 4.9 patch_memory pgd walker missing"
 grep -Fq 'pte_pfn(*pte)' "$KSU_DIR/hook/arm64/patch_memory.c" || die "Linux 4.9 patch_memory pte conversion missing"
 grep -Fq 'memcpy(map, src, len);' "$KSU_DIR/hook/arm64/patch_memory.c" || die "Linux 4.9 patch_memory copy fallback missing"
+grep -Fq '#include <linux/module.h>' "$KSU_DIR/infra/file_wrapper.c" || die "Linux 4.9 file_wrapper module API include missing"
+if grep -q '__poll_t' "$KSU_DIR/infra/file_wrapper.c"; then
+  die "Linux 4.9 file_wrapper still references __poll_t"
+fi
+if grep -q '\.f_op->iopoll\|\.ops\.iopoll' "$KSU_DIR/infra/file_wrapper.c"; then
+  die "Linux 4.9 file_wrapper still references iopoll"
+fi
+if grep -q '\.f_op->mmap_supported_flags\|\.ops\.mmap_supported_flags' "$KSU_DIR/infra/file_wrapper.c"; then
+  die "Linux 4.9 file_wrapper still references mmap_supported_flags"
+fi
+if grep -q '\.f_op->remap_file_range\|\.ops\.remap_file_range' "$KSU_DIR/infra/file_wrapper.c"; then
+  die "Linux 4.9 file_wrapper still references remap_file_range"
+fi
+if grep -q '\.f_op->fadvise\|\.ops\.fadvise' "$KSU_DIR/infra/file_wrapper.c"; then
+  die "Linux 4.9 file_wrapper still references fadvise"
+fi
 
 grep -Fq '#include <linux/uaccess.h>' "$KSU_DIR/hook/syscall_event_bridge.c" || die "Linux 4.9 uaccess include missing from syscall event bridge"
 if grep -RqsE '#include <linux/sched/(signal|task|user|task_stack)\.h>' "$KSU_DIR"; then
