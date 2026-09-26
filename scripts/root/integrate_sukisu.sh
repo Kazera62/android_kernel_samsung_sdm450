@@ -1191,6 +1191,7 @@ static bool add_filename_trans(struct policydb *db, const char *s, const char *t
     struct filename_trans key;
     struct filename_trans *new_key;
     struct filename_trans_datum *datum;
+    struct class_datum *cls;
 
     src = symtab_search(&db->p_types, s);
     tgt = symtab_search(&db->p_types, t);
