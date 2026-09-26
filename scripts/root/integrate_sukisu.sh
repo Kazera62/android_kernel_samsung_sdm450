@@ -112,18 +112,20 @@ print(f"[sukisu] Removed linux/pgtable.h from {removed_pgtable} SukiSU source fi
 print(f"[sukisu] Removed linux/sched/task_stack.h from {removed_task_stack} SukiSU source files")
 print(f"[sukisu] Rewrote untagged_addr() for Linux 4.9 in {untagged_rewrites} SukiSU source files")
 
-# Linux 4.9 has no linux/sched/signal.h. SukiSU v4.2.0 only needs
-# the scheduler declarations that are provided by linux/sched.h there.
-replaced_sched_signal = 0
+# Linux 4.9 has no split linux/sched/*.h headers used by v4.2.0.
+# Normalize the scheduler includes to the monolithic linux/sched.h API.
+replaced_sched_headers = 0
 for path in kernel_dir.rglob("*"):
     if path.suffix not in {".c", ".h"} or not path.is_file():
         continue
     source = path.read_text()
-    updated = source.replace("#include <linux/sched/signal.h>", "#include <linux/sched.h>")
+    updated = source
+    for sched_header in ("signal.h", "task.h", "user.h", "task_stack.h"):
+        updated = updated.replace(f"#include <linux/sched/{sched_header}>", "#include <linux/sched.h>")
     if updated != source:
         path.write_text(updated)
-        replaced_sched_signal += 1
-print(f"[sukisu] Replaced linux/sched/signal.h with linux/sched.h in {replaced_sched_signal} SukiSU source files")
+        replaced_sched_headers += 1
+print(f"[sukisu] Replaced split linux/sched/*.h includes in {replaced_sched_headers} SukiSU source files")
 
 # Linux 4.9 lacks the newer nofault string-copy helper. Keep the
 # SukiSU source calling a local compatibility shim.
