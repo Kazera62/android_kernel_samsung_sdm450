@@ -606,7 +606,7 @@ if pkg_observer.is_file():
     source = pkg_observer.read_text()
     updated = source
     updated = updated.replace("#include <linux/sched.h>\n", "#include <linux/sched.h>\n", 1)
-    start = updated.find("static int ksu_handle_inode_event(")
+    start = updated.find("static int ksu_handle_event(")
     end = updated.find("\n}\n\nstatic const struct fsnotify_ops ksu_ops", start)
     if start < 0 or end < 0:
         raise SystemExit("SukiSU pkg_observer handler boundaries not found")
@@ -642,7 +642,7 @@ if pkg_observer.is_file():
 };'''
 
     new_ops = '''static const struct fsnotify_ops ksu_ops = {
-    .handle_event = ksu_handle_inode_event,
+    .handle_event = ksu_handle_event,
 };'''
 
     if old_ops in updated:
