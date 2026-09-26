@@ -45,6 +45,7 @@ grep -Fq 'KERNEL_SU_RC' "$KSU_DIR/runtime/ksud_integration.c" || die "KERNEL_SU_
 grep -Fq '#elif defined(__aarch64__)' "$KSU_DIR/hook/syscall_hook.h" || die "ARM64 syscall_fn_t compatibility missing"
 grep -Fq 'typedef void (*syscall_fn_t)(void);' "$KSU_DIR/hook/syscall_hook.h" || die "ARM64 syscall_fn_t typedef missing"
 grep -Fq 'ksu_call_original_syscall' "$KSU_DIR/hook/syscall_hook.h" || die "Linux 4.9 syscall ABI shim missing"
+grep -Fq '#include <linux/uaccess.h>' "$KSU_DIR/hook/syscall_event_bridge.c" || die "Linux 4.9 uaccess include missing from syscall event bridge"
 grep -Fq 'ksu_strncpy_from_user_nofault' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 strncpy compatibility shim missing"
 python3 - "$KSU_DIR" <<'PY'
 from pathlib import Path
