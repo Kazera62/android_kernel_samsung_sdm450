@@ -298,6 +298,8 @@ if file_wrapper.is_file():
             1,
         )
 
+    fw = fw.replace("struct inode_security_struct *wrapper_sec = selinux_inode(wrapper_inode);", "struct inode_security_struct *wrapper_sec = (struct inode_security_struct *)wrapper_inode->i_security;", 1)
+
     # Linux 4.9 uses unsigned int for file_operations::poll.
     fw = fw.replace(
         "static __poll_t ksu_wrapper_poll(struct file *fp, struct poll_table_struct *pts)",
