@@ -282,7 +282,7 @@ print(f"[sukisu] Rewired legacy ARM64 syscall-table calls in {replaced_calls} Su
 # Linux 4.9 declares strncpy_from_user() from linux/uaccess.h. The upstream
 # bridge used it without including that header because newer trees pull it in
 # transitively.
-const bridge_path = kernel_dir / "hook" / "syscall_event_bridge.c"
+bridge_path = kernel_dir / "hook" / "syscall_event_bridge.c"
 if bridge_path.is_file():
     bridge_text = bridge_path.read_text()
     if "#include <linux/uaccess.h>" not in bridge_text:
