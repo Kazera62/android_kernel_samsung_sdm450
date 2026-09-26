@@ -70,6 +70,10 @@ if grep -Fq 'selinux_inode(wrapper_inode)' "$KSU_DIR/infra/file_wrapper.c"; then
 fi
 
 
+test -f "$KSU_DIR/infra/seccomp_cache.c" || die "SukiSU seccomp_cache.c missing"
+grep -Fq '#include <linux/refcount.h>' "$KSU_DIR/infra/seccomp_cache.c" || die "Linux 4.9 refcount header missing from seccomp_cache"
+grep -Fq 'SECCOMP_ARCH_NATIVE_NR __NR_syscalls' "$KSU_DIR/infra/seccomp_cache.c" || die "Linux 4.9 native seccomp syscall-count shim missing"
+
 test -f "$KSU_DIR/infra/event_queue.h" || die "SukiSU event_queue.h missing"
 test -f "$KSU_DIR/infra/event_queue.c" || die "SukiSU event_queue.c missing"
 grep -Fq 'unsigned int ksu_event_queue_poll' "$KSU_DIR/infra/event_queue.h" || die "Linux 4.9 event_queue poll prototype not adapted"
