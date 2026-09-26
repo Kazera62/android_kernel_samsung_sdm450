@@ -825,20 +825,20 @@ static inline unsigned long current_user_stack_pointer(void)
             print(f"[sukisu] Added Linux 4.9 current_user_stack_pointer shim: {sucompat}")
 
 
-# SukiSU v4.2.0 uses syscall_fn_t on ARM64, but Linux 4.9 arm64
-# does not provide the newer sys_call_ptr_t typedef. Add an independent
-# compatible function-pointer type without touching the upstream x86 block.
+# SukiSU v4.2.0 uses syscall_fn_t on ARM64.
+# Linux 4.9 ARM64 does not provide the newer sys_call_ptr_t alias.
+# Inject the compatibility type independently, without relying on the exact
+# layout or whitespace of the pinned upstream header.
 text = hook.read_text()
-if "#if defined(__aarch64__)\ntypedef void (*syscall_fn_t)(void);\n#endif" not in text:
-    marker = "#include <asm/syscall.h>\n"
-    if marker not in text:
-        raise SystemExit("SukiSU syscall_hook.h asm/syscall include marker not found")
-    text = text.replace(
-        marker,
-        marker + "\n#if defined(__aarch64__)\ntypedef void (*syscall_fn_t)(void);\n#endif\n",
-        1,
-    )
-    hook.write_text(text)
+arm64_typedef = """#if defined(__aarch64__)
+typedef void (*syscall_fn_t)(void);
+#endif
+"""
+if arm64_typedef not in text:
+    text = arm64_typedef + text
+if "#include <linux/version.h>" not in text:
+    text = "#include <linux/version.h>\n" + text
+hook.write_text(text)
 
 text = init.read_text()
 old = 'MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);'
