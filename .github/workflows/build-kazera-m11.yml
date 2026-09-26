@@ -504,9 +504,9 @@ jobs:
                 p.unlink()
             for p in Path(".").rglob("*.orig"):
                 p.unlink()
-            PY
+          PY
 
-            if find . -path './KernelSU' -prune -o \( -name '*.rej' -o -name '*.orig' \) -print | grep -q .; then
+          if find . -path './KernelSU' -prune -o \( -name '*.rej' -o -name '*.orig' \) -print | grep -q .; then
               echo "SUSFS manual port left reject/original files." >&2
               find . -path './KernelSU' -prune -o \( -name '*.rej' -o -name '*.orig' \) -print >&2
               exit 1
