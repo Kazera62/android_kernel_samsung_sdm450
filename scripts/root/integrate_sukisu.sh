@@ -827,24 +827,27 @@ static inline unsigned long current_user_stack_pointer(void)
 
 # SukiSU v4.2.0 uses syscall_fn_t on ARM64, but the 4.9 arm64 headers expose
 # sys_call_table as void * and do not provide the newer sys_call_ptr_t alias.
-# Use a same-size generic function-pointer type for the table patcher.
+# Add the ARM64 table function type independently so whitespace/formatting in
+# the upstream x86_64 block cannot prevent the Linux 4.9 compatibility pass.
 text = hook.read_text()
-if "#elif defined(__aarch64__)" not in text:
-    import re as _re
-    pattern = r"#if\s+defined\(__x86_64__\)\s+typedef\s+sys_call_ptr_t\s+syscall_fn_t;\s+#endif"
-    replacement = """#if defined(__x86_64__)
-typedef sys_call_ptr_t syscall_fn_t;
-#elif defined(__aarch64__)
-typedef void (*syscall_fn_t)(void);
-#endif"""
-    text, n = _re.subn(pattern, replacement, text, count=1)
-    if n != 1:
-        raise SystemExit("SukiSU syscall_fn_t ARM64 typedef insertion failed")
-    hook.write_text(text)
-if "#include <linux/version.h>" not in text:
+if "#if defined(__aarch64__)\ntypedef void (*syscall_fn_t)(void);\n#endif" not in text:
+    marker = "typedef sys_call_ptr_t syscall_fn_t;"
+    if marker not in text:
+        raise SystemExit("SukiSU syscall_fn_t base typedef not found")
     text = text.replace(
-        "#include <asm/syscall.h>\n",
-        "#include <asm/syscall.h>\n#include <linux/version.h>\n",
+        marker,
+        marker + "\n#elif defined(__aarch64__)\ntypedef void (*syscall_fn_t)(void);",
+        1,
+    )
+    hook.write_text(text)
+
+if "#include <linux/version.h>" not in text:
+    include_marker = "#include <asm/syscall.h>\n"
+    if include_marker not in text:
+        raise SystemExit("SukiSU syscall_hook.h asm/syscall include marker not found")
+    text = text.replace(
+        include_marker,
+        include_marker + "#include <linux/version.h>\n",
         1,
     )
     hook.write_text(text)
