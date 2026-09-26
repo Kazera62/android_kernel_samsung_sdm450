@@ -1081,6 +1081,14 @@ static inline void ksu_security_release_secctx(char *context, u32 len)
         "ksu_security_secid_to_secctx(tsec->sid, &ctx);",
     )
     updated = updated.replace(
+        "return security_secid_to_secctx(secid, &cp->context, &cp->len);",
+        "return ksu_security_secid_to_secctx(secid, &cp->context, &cp->len);",
+    )
+    updated = updated.replace(
+        "security_release_secctx(cp.context, cp.len);",
+        "ksu_security_release_secctx(cp.context, cp.len);",
+    )
+    updated = updated.replace(
         "security_release_secctx(cp.context, cp.len);",
         "ksu_security_release_secctx(cp.context, cp.len);",
     )
