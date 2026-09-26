@@ -104,11 +104,11 @@ fi
 
 grep -Fq 'ksu_kernel_read(struct file' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 kernel_read compatibility helper missing"
 grep -Fq 'ksu_kernel_write(struct file' "$KSU_DIR/kernel_compat.h" || die "Linux 4.9 kernel_write compatibility helper missing"
-if grep -RqsE '(^|[^A-Za-z0-9_])kernel_read\\(' "$KSU_DIR"; then
-  die "raw kernel_read() call remains in SukiSU tree"
+if grep -RqsE '(^|[^A-Za-z0-9_])kernel_read\\(' "$KSU_DIR" --exclude=kernel_compat.h; then
+  die "raw kernel_read() call remains outside kernel_compat.h"
 fi
-if grep -RqsE '(^|[^A-Za-z0-9_])kernel_write\\(' "$KSU_DIR"; then
-  die "raw kernel_write() call remains in SukiSU tree"
+if grep -RqsE '(^|[^A-Za-z0-9_])kernel_write\\(' "$KSU_DIR" --exclude=kernel_compat.h; then
+  die "raw kernel_write() call remains outside kernel_compat.h"
 fi
 
 if grep -RqsF 'TWA_RESUME' "$KSU_DIR"; then
