@@ -861,6 +861,38 @@ compat_header.write_text(compat_text)
 if "return ksu_kernel_read(file" in compat_text or "return ksu_kernel_write(file" in compat_text:
     raise SystemExit("Linux 4.9 kernel_compat I/O helper is recursive after normalization")
 print("[sukisu] Normalized Linux 4.9 kernel_read/kernel_write helper block")
+# Linux 4.9 app_profile seccomp compatibility.
+# Linux 4.9 has only { mode, filter } in struct seccomp and exposes
+# put_seccomp_filter() for dropping a task's filter reference.
+app_profile = kernel_dir / "policy" / "app_profile.c"
+if app_profile.is_file():
+    source = app_profile.read_text()
+    updated = source
+    updated = updated.replace(
+        "void seccomp_filter_release(struct task_struct *tsk);",
+        "void put_seccomp_filter(struct task_struct *tsk);",
+        1,
+    )
+    updated = updated.replace(
+        "    atomic_set(&current->seccomp.filter_count, 0);\n",
+        "",
+        1,
+    )
+    updated = updated.replace(
+        "    seccomp_filter_release(fake);",
+        "    put_seccomp_filter(fake);",
+        1,
+    )
+    if "current->seccomp.filter_count" in updated:
+        raise SystemExit("SukiSU app_profile still references unavailable Linux 4.9 seccomp.filter_count")
+    if "seccomp_filter_release(fake)" in updated:
+        raise SystemExit("SukiSU app_profile still references newer seccomp_filter_release")
+    if "put_seccomp_filter(fake);" not in updated:
+        raise SystemExit("SukiSU app_profile Linux 4.9 filter-release adapter missing")
+    if updated != source:
+        app_profile.write_text(updated)
+    print("[sukisu] Applied Linux 4.9 app_profile seccomp compatibility")
+
 # Ensure every translation unit using the I/O helpers includes the compatibility header.
 for path in kernel_dir.rglob("*.c"):
     if not path.is_file():
