@@ -755,6 +755,10 @@ compat_header = kernel_dir / "kernel_compat.h"
 if compat_header.is_file():
     text = compat_header.read_text()
     io_helpers = r'''
+#ifndef fallthrough
+#define fallthrough do { } while (0)
+#endif
+
 #ifndef ksu_kernel_read
 static inline ssize_t ksu_kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
 {
@@ -778,6 +782,8 @@ static inline ssize_t ksu_kernel_write(struct file *file, const void *buf, size_
 #endif
 
 '''
+    if "return ksu_kernel_read(file" in text or "return ksu_kernel_write(file" in text:
+        raise SystemExit("generated kernel_compat.h I/O helper became recursive")
     if "ksu_kernel_read(struct file" not in text:
         anchor = "#include <linux/version.h>\n"
         if anchor not in text:
@@ -790,6 +796,8 @@ import re
 replaced_io = 0
 for path in kernel_dir.rglob("*"):
     if path.suffix not in {".c", ".h"} or not path.is_file():
+        continue
+    if path == compat_header:
         continue
     source = path.read_text()
     updated = re.sub(r"(?<![A-Za-z0-9_])kernel_read\(", "ksu_kernel_read(", source)
