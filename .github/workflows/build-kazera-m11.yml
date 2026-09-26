@@ -391,12 +391,8 @@ jobs:
           # kernel/sys.c: 4.9 needs an explicit setresuid hook for SUSFS.
           # SukiSU's CONFIG_KSU_SUSFS implementation provides ksu_handle_setresuid()
           # for manager-FD installation, uid namespace handling, and SUSFS umount.
-          python3 - <<'PY'
-          from pathlib import Path
-
           p = Path("kernel/sys.c")
           s = p.read_text(encoding="utf-8")
-
           decl = """#ifdef CONFIG_KSU_SUSFS
           extern int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid);
           #endif
@@ -420,11 +416,11 @@ jobs:
               if body_anchor not in s:
                   raise SystemExit("kernel/sys.c setresuid body anchor missing")
               s = s.replace(body_anchor, body_anchor + "\n" + call, 1)
-
           p.write_text(s, encoding="utf-8")
-          PY
 
-          grep -Fq '(void)ksu_handle_setresuid(ruid, euid, suid);' kernel/sys.c
+          # Verify the 4.9 setresuid hook was installed.
+          if "(void)ksu_handle_setresuid(ruid, euid, suid);" not in s:
+              raise SystemExit("kernel/sys.c setresuid hook verification failed")
 
           # fs/stat.c: hook the actual newfstatat syscall path, matching
           # the established 4.9 non-GKI SukiSU integration.
