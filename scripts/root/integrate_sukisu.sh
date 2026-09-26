@@ -284,15 +284,13 @@ print(f"[sukisu] Rewired legacy ARM64 syscall-table calls in {replaced_calls} Su
 # Linux 4.9 declares strncpy_from_user() from linux/uaccess.h. The upstream
 # bridge used it without including that header because newer trees pull it in
 # transitively.
-# Linux 4.9 VFS has a smaller struct file_operations than modern kernels.
-# SukiSU's fd wrapper must only reference fields that exist in 4.9.
+# Linux 4.9 VFS compatibility for SukiSU's fd wrapper.
 file_wrapper = kernel_dir / "infra" / "file_wrapper.c"
 if file_wrapper.is_file():
     import re
 
     fw = file_wrapper.read_text()
 
-    # Linux 4.9 declares try_module_get()/module_put() in linux/module.h.
     if "#include <linux/module.h>" not in fw:
         fw = fw.replace(
             "#include <linux/gfp.h>",
@@ -300,71 +298,61 @@ if file_wrapper.is_file():
             1,
         )
 
-    # Linux 4.9 uses unsigned int for file_operations::poll.
     fw = fw.replace(
         "static __poll_t ksu_wrapper_poll(struct file *fp, struct poll_table_struct *pts)",
         "static unsigned int ksu_wrapper_poll(struct file *fp, struct poll_table_struct *pts)",
         1,
     )
 
-    # iopoll is not present in the 4.9 file_operations structure.
-    fw = re.sub(
+    # Remove the entire modern iopoll callback block.
+    fw, n = re.subn(
         r"\n#if LINUX_VERSION_CODE >= KERNEL_VERSION\(6, 1, 0\)\nstatic int ksu_wrapper_iopoll.*?\n#endif\n",
         "\n",
         fw,
         count=1,
         flags=re.S,
     )
-    fw = re.sub(
-        r"^\\s*p->ops\.iopoll = fp->f_op->iopoll \? ksu_wrapper_iopoll : NULL;\\n",
+
+    # Remove the iopoll assignment if present.
+    fw, n2 = re.subn(
+        r"^\s*p->ops\.iopoll\s*=.*\n",
         "",
         fw,
         count=1,
         flags=re.M,
     )
 
-    # mmap_supported_flags and modern fop_flags are not present in 4.9.
-    fw = re.sub(
-        r"\n#if LINUX_VERSION_CODE >= KERNEL_VERSION\(6, 12, 0\).*?\n#endif\n",
+    # Remove modern mmap flag assignments.
+    fw, n3 = re.subn(
+        r"\n#if LINUX_VERSION_CODE >= KERNEL_VERSION\(6, 12, 0\)\n.*?\n#else\n.*?\n#endif\n",
         "\n",
         fw,
         count=1,
         flags=re.S,
     )
 
-    # remap_file_range() and fadvise() are not file_operations callbacks in 4.9.
-    fw = re.sub(
-        r"// no REMAP_FILE_DEDUP:.*?^static int ksu_wrapper_fadvise",
-        "static int ksu_wrapper_fadvise",
-        fw,
-        count=1,
-        flags=re.S | re.M,
-    )
-    fw = re.sub(
-        r"^static int ksu_wrapper_fadvise.*?^static void ksu_release_file_wrapper",
-        "static void ksu_release_file_wrapper",
-        fw,
-        count=1,
-        flags=re.S | re.M,
-    )
-    fw = re.sub(
-        r"^\\s*p->ops\.remap_file_range =.*?\n",
+    # Remove the remap_file_range wrapper function and the fadvise wrapper.
+    remap_start = fw.find("// no REMAP_FILE_DEDUP:")
+    release_marker = fw.find("static void ksu_release_file_wrapper", remap_start)
+    if remap_start >= 0 and release_marker >= 0:
+        fw = fw[:remap_start] + fw[release_marker:]
+
+    # Remove the two assignments if the wrapper source variant still contains them.
+    fw, n4 = re.subn(
+        r"^\s*p->ops\.remap_file_range\s*=.*\n",
         "",
         fw,
         count=1,
         flags=re.M,
     )
-    fw = re.sub(
-        r"^\\s*p->ops\.fadvise =.*?\n",
+    fw, n5 = re.subn(
+        r"^\s*p->ops\.fadvise\s*=.*\n",
         "",
         fw,
         count=1,
         flags=re.M,
     )
 
-    # Hard fail if an unsupported 4.9 callback leaked through. This turns
-    # future API drift into an integration error instead of a late compiler
-    # failure.
     forbidden = (
         "ksu_wrapper_iopoll",
         ".iopoll",
@@ -382,7 +370,11 @@ if file_wrapper.is_file():
         )
 
     file_wrapper.write_text(fw)
-    print("[sukisu] Applied Linux 4.9 VFS file_wrapper compatibility")
+    print(
+        "[sukisu] Applied Linux 4.9 VFS file_wrapper compatibility "
+        f"(iopoll_block={n}, iopoll_assign={n2}, mmap_block={n3}, "
+        f"remap_assign={n4}, fadvise_assign={n5})"
+    )
 
 bridge_path = kernel_dir / "hook" / "syscall_event_bridge.c"
 if bridge_path.is_file():
