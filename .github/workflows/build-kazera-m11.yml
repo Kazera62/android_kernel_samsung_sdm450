@@ -281,10 +281,13 @@ jobs:
               "#define USER_ARG_NULL (&(struct user_arg_ptr){ 0 })",
           )
 
-          replace_once(
-              "KernelSU/kernel/infra/kernel_compat.h",
-              "#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0) && !defined(KSU_HAS_SELINUX_INODE)",
-              """#if !defined(KSU_COMPAT_HAS_CURRENT_SID)
+          # On this Android 4.9 tree current_sid() is not exported. Add the
+          # compatibility helper after objsec.h so task_security_struct is complete.
+          const ksu = Path("KernelSU/kernel/ksu.c")
+          s = ksu.read_text(encoding="utf-8")
+          if "static inline u32 current_sid(void)" not in s:
+              marker = '#include "objsec.h"\n'
+              addition = """#if !defined(KSU_COMPAT_HAS_CURRENT_SID)
           static inline u32 current_sid(void)
           {
               const struct task_security_struct *tsec = selinux_cred(current_cred());
@@ -292,15 +295,41 @@ jobs:
           }
           #endif
 
-          #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0) && !defined(KSU_HAS_SELINUX_INODE)""",
+          """
+              if marker not in s:
+                  raise SystemExit("ksu.c objsec include anchor missing")
+              s=s.replace(marker, marker + addition, 1)
+              ksu.write_text(s, encoding="utf-8")
+
+          # Pin the metadata printed by SukiSU's build Makefile to the
+          # requested v4.1.2 instead of querying the latest GitHub release.
+          replace_once(
+              "KernelSU/kernel/Makefile",
+              "KSU_VERSION     := $(if $(LOCAL_COUNT),$(shell expr $(VERSION_BASE) + $(LOCAL_COUNT) - $(VERSION_OFFSET)),13000)",
+              "KSU_VERSION     := 40762",
           )
+          replace_once(
+              "KernelSU/kernel/Makefile",
+              "VERSION_TAG     := $(or $(KSU_GITHUB_VER),$(git_latest_tag),4.1.2)",
+              "VERSION_TAG     := 4.1.2",
+          )
+          replace_once(
+              "KernelSU/kernel/Makefile",
+              "KSU_VERSION_FULL := $(if $(call git_short_sha),v$(VERSION_TAG)-$(call git_short_sha)@$(call git_branch),v$(VERSION_TAG)-$(REPO_NAME)-unknown@unknown)",
+              "KSU_VERSION_FULL := v4.1.2-f96f6cd2@builtin",
+          )
+
+          # current_sid() is added below in ksu.c after SELinux objsec.h is included.
           PY
 
           grep -Fq '#define fallthrough' KernelSU/kernel/infra/kernel_compat.h
           grep -Fq '#include "infra/kernel_compat.h"' KernelSU/kernel/policy/allowlist.c
           grep -Fq 'ksu_strncpy_from_user_nofault(arg' KernelSU/kernel/sulog/event.c
           grep -Fq '#define USER_ARG_NULL (&(struct user_arg_ptr){ 0 })' KernelSU/kernel/sulog/event.c
-          grep -Fq 'static inline u32 current_sid(void)' KernelSU/kernel/infra/kernel_compat.h
+          grep -Fq 'static inline u32 current_sid(void)' KernelSU/kernel/ksu.c
+          grep -Fq 'KSU_VERSION     := 40762' KernelSU/kernel/Makefile
+          grep -Fq 'VERSION_TAG     := 4.1.2' KernelSU/kernel/Makefile
+          grep -Fq 'KSU_VERSION_FULL := v4.1.2-f96f6cd2@builtin' KernelSU/kernel/Makefile
           git -C KernelSU diff --check
 
           rm -rf drivers/kernelsu
