@@ -1158,6 +1158,8 @@ struct selinux_policy {
 sepolicy_c = kernel_dir / "selinux" / "sepolicy.c"
 if sepolicy_c.is_file():
     text = sepolicy_c.read_text()
+    if '#include "security.h"' not in text:
+        text = '#include "security.h"\n' + text
     start = text.find("void ksu_destroy_sepolicy(struct selinux_policy *pol)")
     if start < 0:
         raise SystemExit("SukiSU sepolicy.c policy wrapper functions not found")
@@ -1180,22 +1182,30 @@ struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol)
     void *data;
     struct policy_file fp;
 
-    source = old_pol ? &old_pol->policydb : &policydb;
-    len = source->len;
-    if (!len)
-        return ERR_PTR(-EINVAL);
+    if old_pol:
+        source = &old_pol->policydb
+        len = source->len
+        if not len:
+            return ERR_PTR(-EINVAL)
 
-    data = vmalloc(len);
-    if (!data)
-        return ERR_PTR(-ENOMEM);
+        data = vmalloc(len)
+        if not data:
+            return ERR_PTR(-ENOMEM)
 
-    fp.data = data;
-    fp.len = len;
-    ret = policydb_write(source, &fp);
-    if (ret) {
-        vfree(data);
-        return ERR_PTR(ret);
-    }
+        fp.data = data
+        fp.len = len
+        ret = policydb_write(source, &fp)
+        if ret:
+            vfree(data)
+            return ERR_PTR(ret)
+    else:
+        ret = security_read_policy(&data, &len)
+        if ret:
+            return ERR_PTR(ret)
+        if not data or not len:
+            if data:
+                vfree(data)
+            return ERR_PTR(-EINVAL)
 
     new_pol = kzalloc(sizeof(*new_pol), GFP_KERNEL);
     if (!new_pol) {
