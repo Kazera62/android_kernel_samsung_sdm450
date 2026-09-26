@@ -566,6 +566,32 @@ if seccomp_cache.is_file():
         seccomp_cache.write_text(updated)
     print("[sukisu] Applied Linux 4.9 seccomp_cache compatibility")
 
+# Linux 4.9 mount-namespace compatibility.
+# v4.2.0 uses internal mount/unshare syscall entry points introduced later.
+# Linux 4.9 exposes sys_setns/sys_unshare and do_mount instead.
+su_mount_ns = kernel_dir / "infra" / "su_mount_ns.c"
+if su_mount_ns.is_file():
+    source = su_mount_ns.read_text()
+    updated = source
+    updated = updated.replace("#include <uapi/linux/mount.h>\n", "")
+    updated = updated.replace("extern int path_mount(const char *dev_name, struct path *path, const char *type_page, unsigned long flags,\n                      void *data_page);", "extern long do_mount(const char *dev_name, const char __user *dir_name, const char *type_page, unsigned long flags, void *data_page);\nextern long sys_setns(int fd, int nstype);\nextern long sys_unshare(unsigned long unshare_flags);")
+    old_setns = '''extern long __arm64_sys_setns(const struct pt_regs *regs);\n#elif defined(__x86_64__)\nextern long __x64_sys_setns(const struct pt_regs *regs);\n#endif'''
+    new_setns = '''extern long sys_setns(int fd, int nstype);\n#endif'''
+    if old_setns in updated:
+        updated = updated.replace(old_setns, new_setns, 1)
+    start = updated.find("static long ksu_sys_setns(int fd, int flags)\n{")
+    end = updated.find("\n}\n\n// global mode", start)
+    if start < 0 or end < 0:
+        raise SystemExit("SukiSU su_mount_ns ksu_sys_setns boundaries not found")
+    compat_setns = '''static long ksu_sys_setns(int fd, int flags)\n{\n    return sys_setns(fd, flags);\n}'''
+
+    updated = updated[:start] + compat_setns + updated[end+2:]
+    updated = updated.replace("int pm_ret = path_mount(NULL, &root_path, NULL, MS_PRIVATE | MS_REC, NULL);", "mm_segment_t old_fs = get_fs();\n    set_fs(KERNEL_DS);\n    int pm_ret = do_mount(NULL, (const char __user *)\"/\", NULL, MS_PRIVATE | MS_REC, NULL);\n    set_fs(old_fs);")
+    updated = updated.replace("long ret = ksys_unshare(CLONE_NEWNS);", "long ret = sys_unshare(CLONE_NEWNS);")
+    if updated != source:
+        su_mount_ns.write_text(updated)
+    print("[sukisu] Applied Linux 4.9 mount namespace compatibility")
+
 # Linux 4.9 compatibility checks for the transformed tree.
 import re
 raw_nofault = []
