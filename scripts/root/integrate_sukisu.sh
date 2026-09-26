@@ -112,6 +112,19 @@ print(f"[sukisu] Removed linux/pgtable.h from {removed_pgtable} SukiSU source fi
 print(f"[sukisu] Removed linux/sched/task_stack.h from {removed_task_stack} SukiSU source files")
 print(f"[sukisu] Rewrote untagged_addr() for Linux 4.9 in {untagged_rewrites} SukiSU source files")
 
+# Linux 4.9 has no linux/sched/signal.h. SukiSU v4.2.0 only needs
+# the scheduler declarations that are provided by linux/sched.h there.
+replaced_sched_signal = 0
+for path in kernel_dir.rglob("*"):
+    if path.suffix not in {".c", ".h"} or not path.is_file():
+        continue
+    source = path.read_text()
+    updated = source.replace("#include <linux/sched/signal.h>", "#include <linux/sched.h>")
+    if updated != source:
+        path.write_text(updated)
+        replaced_sched_signal += 1
+print(f"[sukisu] Replaced linux/sched/signal.h with linux/sched.h in {replaced_sched_signal} SukiSU source files")
+
 # Linux 4.9 lacks the newer nofault string-copy helper. Keep the
 # SukiSU source calling a local compatibility shim.
 compat_header = kernel_dir / "kernel_compat.h"
@@ -538,6 +551,25 @@ test "$(readlink "$DRIVER_DIR/kernelsu")" = "../KernelSU/kernel"
 
 log "Verifying integrated source"
 test "$(git -C "$KSU_DIR" rev-parse HEAD)" = "$SUKISU_REF" || die "final SukiSU SHA mismatch"
+
+# Custom kernel-side version identifier requested for this build.
+# Keep the upstream source/tag pin immutable, but make the runtime version
+# deterministic instead of depending on network-derived commit counts.
+ksu_kbuild="$KSU_DIR/kernel/Kbuild"
+if [ -f "$ksu_kbuild" ]; then
+  python3 - "$ksu_kbuild" <<'PYVER'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+s = p.read_text()
+s = s.replace('KSU_VERSION     := $(if $(LOCAL_COUNT),$(shell expr $(VERSION_BASE) + $(LOCAL_COUNT) - $(VERSION_OFFSET)),13000)',
+              'KSU_VERSION     := 40900')
+s = s.replace('VERSION_TAG     := $(or $(KSU_GITHUB_VER),$(git_latest_tag),4.1.3)',
+              'VERSION_TAG     := 4.2.0_40900')
+p.write_text(s)
+PYVER
+  log "Set custom SukiSU build version: V4.2.0_40900 (KSU_VERSION=40900)"
+fi
 grep -Fq 'config KSU' "$KSU_DIR/kernel/Kconfig" || die "KSU config entry missing"
 grep -Fq 'depends on KPROBES && EXT4_FS' "$KSU_DIR/kernel/Kconfig" || die "v4.2.0 KSU dependency changed: expected KPROBES + EXT4_FS"
 grep -Fq 'config KSU_MANUAL_SU' "$KSU_DIR/kernel/Kconfig" || die "KSU_MANUAL_SU config entry missing"
