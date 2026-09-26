@@ -339,7 +339,7 @@ fail:
     *err = -ENOENT;
     return 0;
 }
-#else
+#endif
 """;
     # Keep upstream implementation but close the version guard immediately
     # before the next function marker.
