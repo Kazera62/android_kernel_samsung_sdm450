@@ -132,6 +132,10 @@ print(f"[sukisu] Replaced split linux/sched/*.h includes in {replaced_sched_head
 compat_header = kernel_dir / "kernel_compat.h"
 if compat_header.is_file():
     text = compat_header.read_text()
+    for inc in ("#include <linux/slab.h>\n", "#include <linux/vmalloc.h>\n", "#include <asm/pgtable.h>\n"):
+        if inc not in text:
+            text = text.replace("#include <linux/fs.h>\n", "#include <linux/fs.h>\n" + inc, 1)
+    compat_header.write_text(text)
     if "#include <linux/slab.h>" not in text:
         text = text.replace("#include <linux/fs.h>\n", "#include <linux/fs.h>\n#include <linux/slab.h>\n#include <linux/vmalloc.h>\n", 1)
     helper = '''
@@ -768,28 +772,6 @@ if compat_header.is_file():
 #define fallthrough do { } while (0)
 #endif
 
-#ifndef ksu_kvmalloc
-static inline void *ksu_kvmalloc(size_t size, gfp_t flags)
-{
-    void *ret = kmalloc(size, flags | __GFP_NOWARN);
-    if (ret)
-        return ret;
-    return __vmalloc(size, flags, PAGE_KERNEL);
-}
-#endif
-
-#ifndef ksu_kvfree
-static inline void ksu_kvfree(const void *addr)
-{
-    if (!addr)
-        return;
-    if (is_vmalloc_addr(addr))
-        vfree(addr);
-    else
-        kfree(addr);
-}
-#endif
-
 #ifndef ksu_kernel_read
 static inline ssize_t ksu_kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
 {
@@ -841,7 +823,11 @@ print(f"[sukisu] Rewired kernel_read/kernel_write calls through 4.9 helpers in {
 # Rebuild the compatibility helper block after all global rewrites. This
 # guarantees the shim itself can never be rewritten into a recursive call.
 compat_text = compat_header.read_text()
-io_block = """#ifndef ksu_kvmalloc
+io_block = """#ifndef fallthrough
+#define fallthrough do { } while (0)
+#endif
+
+#ifndef ksu_kvmalloc
 static inline void *ksu_kvmalloc(size_t size, gfp_t flags)
 {
     void *ret = kmalloc(size, flags | __GFP_NOWARN);
@@ -854,12 +840,17 @@ static inline void *ksu_kvmalloc(size_t size, gfp_t flags)
 #ifndef ksu_kvfree
 static inline void ksu_kvfree(const void *addr)
 {
+    unsigned long v;
     if (!addr)
         return;
-    if (is_vmalloc_addr(addr))
+    v = (unsigned long)addr;
+#ifdef CONFIG_MMU
+    if (v >= VMALLOC_START && v < VMALLOC_END) {
         vfree(addr);
-    else
-        kfree(addr);
+        return;
+    }
+#endif
+    kfree(addr);
 }
 #endif
 
@@ -883,8 +874,7 @@ static inline ssize_t ksu_kernel_write(struct file *file, const void *buf, size_
     return kernel_write(file, buf, count, pos);
 #endif
 }
-#endif"""
-lines = compat_text.splitlines()
+#endiflines = compat_text.splitlines()
 start = next((i for i, line in enumerate(lines) if line.strip() == "#ifndef ksu_kernel_read"), -1)
 if start >= 0:
     write_start = next((i for i in range(start + 1, len(lines)) if lines[i].strip() == "#ifndef ksu_kernel_write"), -1)
