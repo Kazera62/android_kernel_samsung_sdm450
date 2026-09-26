@@ -324,16 +324,16 @@ jobs:
 
           # SukiSU manual-hook compatibility bridge for this Samsung 4.9 tree.
           cat > KernelSU/kernel/sukisu_fix.c <<'EOF'
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/jump_label.h>
-
-DEFINE_STATIC_KEY_FALSE(ksu_input_hook_key_false);
-EXPORT_SYMBOL(ksu_input_hook_key_false);
-
-DEFINE_STATIC_KEY_FALSE(ksu_init_rc_hook_key_false);
-EXPORT_SYMBOL(ksu_init_rc_hook_key_false);
-EOF
+          #include <linux/kernel.h>
+          #include <linux/module.h>
+          #include <linux/jump_label.h>
+          
+          DEFINE_STATIC_KEY_FALSE(ksu_input_hook_key_false);
+          EXPORT_SYMBOL(ksu_input_hook_key_false);
+          
+          DEFINE_STATIC_KEY_FALSE(ksu_init_rc_hook_key_false);
+          EXPORT_SYMBOL(ksu_init_rc_hook_key_false);
+          EOF
 
           sed -i 's/^obj-$(CONFIG_KSU) := ksu\.o$/obj-$(CONFIG_KSU) := ksu.o sukisu_fix.o/' KernelSU/kernel/Makefile
 
