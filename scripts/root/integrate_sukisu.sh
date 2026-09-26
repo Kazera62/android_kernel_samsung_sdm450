@@ -756,6 +756,13 @@ static int add_mark_on_inode(struct inode *inode, u32 mask, struct fsnotify_mark
 compat_header = kernel_dir / "kernel_compat.h"
 if compat_header.is_file():
     text = compat_header.read_text()
+    if "#include <linux/slab.h>" not in text:
+        text = text.replace(
+            "#include <linux/fs.h>\n",
+            "#include <linux/fs.h>\n#include <linux/slab.h>\n#include <linux/vmalloc.h>\n",
+            1,
+        )
+        compat_header.write_text(text)
     io_helpers = r'''
 #ifndef fallthrough
 #define fallthrough do { } while (0)
