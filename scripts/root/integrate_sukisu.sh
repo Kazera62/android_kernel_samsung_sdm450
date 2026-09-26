@@ -555,7 +555,7 @@ test "$(git -C "$KSU_DIR" rev-parse HEAD)" = "$SUKISU_REF" || die "final SukiSU 
 # Custom kernel-side version identifier requested for this build.
 # Keep the upstream source/tag pin immutable, but make the runtime version
 # deterministic instead of depending on network-derived commit counts.
-ksu_kbuild="$KSU_DIR/kernel/Kbuild"
+ksu_kbuild="$KSU_DIR/Kbuild"
 if [ -f "$ksu_kbuild" ]; then
   python3 - "$ksu_kbuild" <<'PYVER'
 from pathlib import Path
