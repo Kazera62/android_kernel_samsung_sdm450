@@ -428,6 +428,8 @@ if new not in text:
     if old not in text:
         raise SystemExit("SukiSU syscall_fn_t definition pattern not found")
     text = text.replace(old, new, 1)
+    if "#include <linux/version.h>" not in text:
+        text = text.replace("#include <asm/syscall.h>\n", "#include <asm/syscall.h>\n#include <linux/version.h>\n", 1)
     hook.write_text(text)
 
 text = init.read_text()
