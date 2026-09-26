@@ -99,12 +99,9 @@ grep -Fq 'flex_array_get_ptr((a)->htable' "$KSU_DIR/selinux/sepolicy.c" || die "
 grep -Fq 'struct filename_trans key;' "$KSU_DIR/selinux/sepolicy.c" || die "Linux 4.9 filename transition adapter missing"
 grep -Fq 'db->type_val_to_struct_array' "$KSU_DIR/selinux/sepolicy.c" || die "Linux 4.9 type array compatibility missing"
 grep -Fq 'ksu_clone_ebitmap_flex_array' "$KSU_DIR/selinux/sepolicy.c" || die "Linux 4.9 ebitmap array compatibility missing"
-if grep -Fq 'compat_filename_trans_count' "$KSU_DIR/selinux/sepolicy.c"; then
-  die "Linux 4.9 sepolicy still references unavailable compat_filename_trans_count"
-fi
-if grep -Fq 'db->type_val_to_struct[' "$KSU_DIR/selinux/sepolicy.c"; then
-  die "Linux 4.9 sepolicy still references unavailable type_val_to_struct pointer array"
-fi
+grep -Fq 'ksu_avtab_set_head' "$KSU_DIR/selinux/sepolicy.c" || die "Linux 4.9 AVTAB head adapter missing"
+grep -Fq 'hashtab_search(db->filename_trans, &key)' "$KSU_DIR/selinux/sepolicy.c" || die "Linux 4.9 filename transition search adapter missing"
+grep -Fq 'flex_array_put_ptr(new_types' "$KSU_DIR/selinux/sepolicy.c" || die "Linux 4.9 type table insertion adapter missing"
 
 test -f "$KSU_DIR/policy/app_profile.c" || die "SukiSU app_profile.c missing"
 if grep -Fq 'current->seccomp.filter_count' "$KSU_DIR/policy/app_profile.c"; then
