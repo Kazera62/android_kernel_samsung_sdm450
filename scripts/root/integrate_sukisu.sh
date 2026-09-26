@@ -339,6 +339,187 @@ if old in text and '#ifdef MODULE_IMPORT_NS' not in text:
 print("[sukisu] Applied Linux 4.9 ARM64 compatibility fixes")
 PY
 
+# Linux 4.9's security_hook_heads are a struct of list_head members.
+# SukiSU v4.2.0's generic pre-6.12 code targets the newer hlist-based layout.
+# Adapt only the pre-6.12 LSM walker/unhook path to the actual 4.9 API.
+python3 - "$KSU_DIR/kernel/hook/lsm_hook.c" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+
+old_start = """#else
+    heads_addr = find_kernel_symbol_exact("security_hook_heads");
+    if (!heads_addr) {
+        pr_err("lsm_hook: failed to resolve security_hook_heads\\n");
+        ret = -ENOENT;
+        goto out_unlock;
+    }
+    unsigned long heads_size = sizeof(struct security_hook_heads);
+"""
+start = text.find(old_start)
+if start < 0:
+    raise SystemExit("4.9 LSM hook block start not found")
+
+end_marker = """#endif
+    goto out_unlock;
+"""
+end = text.find(end_marker, start)
+if end < 0:
+    raise SystemExit("4.9 LSM hook block end not found")
+
+new_block = """#else
+    struct list_head *head;
+
+    heads_addr = find_kernel_symbol_exact("security_hook_heads");
+    if (!heads_addr) {
+        pr_err("lsm_hook: failed to resolve security_hook_heads\\n");
+        ret = -ENOENT;
+        goto out_unlock;
+    }
+
+    head = (struct list_head *)(heads_addr + hook->head_offset);
+    pr_info("4.9 LSM head_addr=0x%lx head_offset=0x%lx hook_offset=0x%lx\\n",
+            (unsigned long)head, hook->head_offset, hook->hook_offset);
+
+    /* Primary head: find the real SELinux/security hook entry. */
+    list_for_each_entry (entry, head, list) {
+        void **slot = (void **)((char *)entry + hook->hook_offset);
+        void *current_origin = READ_ONCE(*slot);
+        int j;
+
+        for (j = 0; j < ksu_lsm_hook_count; j++) {
+            if (ksu_lsm_hook_entries[j].hook->replacement == current_origin) {
+                current_origin = ksu_lsm_hook_entries[j].hook->original;
+                break;
+            }
+        }
+
+        if (current_origin == hook->replacement) {
+            ret = -EALREADY;
+            goto out_unlock;
+        }
+
+        if (current_origin == target) {
+            selected_entry = entry;
+            selected_slot = slot;
+            selected_origin = current_origin;
+            pr_info("lsm_hook: found %s on 4.9 head %s origin %px\\n",
+                    hook->target_name ?: "unknown",
+                    hook->head_name ?: "unknown",
+                    current_origin);
+            break;
+        }
+    }
+
+    /*
+     * Some hook initializers use offset to map a target present on one
+     * security head to the real head where the desired slot lives.
+     * In Linux 4.9 those heads are list_head members, so pointer arithmetic
+     * is done in units of struct list_head.
+     */
+    if (!selected_entry && hook->offset) {
+        struct list_head *real_head = head + hook->offset;
+
+        list_for_each_entry (entry, real_head, list) {
+            void **slot = (void **)((char *)entry + hook->hook_offset);
+            void *current_origin = READ_ONCE(*slot);
+
+            if (current_origin == hook->replacement) {
+                ret = -EALREADY;
+                goto out_unlock;
+            }
+        }
+
+        if (!list_empty(real_head)) {
+            selected_entry = list_first_entry(real_head, struct security_hook_list, list);
+            selected_slot = (void **)((char *)selected_entry + hook->hook_offset);
+            selected_origin = READ_ONCE(*selected_slot);
+        } else {
+            /*
+             * The real head is empty. Reuse the embedded hook list entry.
+             * KSU_LSM_HOOK_INIT already initialized hook.list.hook.member.
+             */
+            INIT_LIST_HEAD(&hook->list.list);
+            hook->list.head = real_head;
+            list_add_rcu(&hook->list.list, real_head);
+            selected_entry = &hook->list;
+            selected_slot = NULL;
+            selected_origin = NULL;
+        }
+    }
+
+    if (!selected_entry) {
+        pr_err("lsm_hook: target %s not found in 4.9 head %s\\n",
+               target_name, hook->head_name ?: "unknown");
+        ret = -ENOENT;
+        goto out_unlock;
+    }
+
+    ret = ksu_lsm_hook_track(hook);
+    if (ret) {
+        pr_err("lsm_hook: too many hooks to track: %d\\n", ret);
+        if (selected_entry == &hook->list)
+            list_del_rcu(&hook->list.list);
+        goto out_unlock;
+    }
+
+    if (selected_entry != &hook->list) {
+        ret = ksu_lsm_hook_patch_slot(selected_slot, hook->replacement);
+        if (ret) {
+            pr_err("lsm_hook: failed to patch %s on Linux 4.9\\n",
+                   hook->head_name ?: "unknown");
+            ret = -EFAULT;
+            goto out_untrack;
+        }
+    }
+
+    hook->entry = selected_entry;
+    hook->original = selected_origin;
+    pr_info("lsm_hook: patched %s hook slot %px from %px to %px\\n",
+            hook->head_name ?: "unknown",
+            selected_slot,
+            selected_origin,
+            hook->replacement);
+#endif
+"""
+text = text[:start] + new_block + text[end + len("#endif
+"):]
+
+old_unhook = """#else
+    if (hook->entry == &hook->list) {
+        slot = (void **)&hook->list.head->first;
+        pr_info("unhook patch head->first\\n");
+    } else {
+        slot = (void **)((char *)hook->entry + hook->hook_offset);
+        pr_info("unhook patch slot\\n");
+    }
+#endif
+"""
+new_unhook = """#else
+    if (hook->entry == &hook->list) {
+        list_del_rcu(&hook->list.list);
+        synchronize_rcu();
+        pr_info("lsm_hook: removed injected 4.9 LSM hook entry\\n");
+        ksu_lsm_hook_untrack(hook);
+        hook->entry = NULL;
+        mutex_unlock(&ksu_lsm_hook_lock);
+        return;
+    }
+
+    slot = (void **)((char *)hook->entry + hook->hook_offset);
+    pr_info("lsm_hook: unhook 4.9 function slot\\n");
+#endif
+"""
+if old_unhook not in text:
+    raise SystemExit("4.9 LSM unhook block not found")
+text = text.replace(old_unhook, new_unhook, 1)
+
+path.write_text(text)
+print("[sukisu] Applied explicit Linux 4.9 list_head LSM hook adapter")
+PY
+
 if grep -Rqs '#include <linux/sched/task_stack.h>' "$KSU_DIR"; then
   die "linux/sched/task_stack.h survived the Linux 4.9 compatibility transform"
 fi
