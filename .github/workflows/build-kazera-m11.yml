@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - lineage-20
+      - Kazera-OC
   pull_request:
     branches:
       - lineage-20
+      - Kazera-OC
   workflow_dispatch:
     inputs:
       kernel_name:
@@ -22,6 +24,15 @@ on:
         options:
           - "off"
           - "on"
+      root:
+        description: "Pilih varian root kernel."
+        type: choice
+        required: true
+        default: "sukisu-susfs"
+        options:
+          - none
+          - sukisu-ultra
+          - sukisu-susfs
       clang:
         description: "Pilih Android Clang toolchain untuk kompilasi kernel."
         type: choice
@@ -109,6 +120,12 @@ concurrency:
 env:
   KERNEL_NAME_INPUT: ${{ inputs.kernel_name || 'Kazera M11/A11' }}
   TELEGRAM_ENABLE: ${{ inputs.telegram || 'off' }}
+  ROOT_IMPL: ${{ inputs.root || 'sukisu-susfs' }}
+  SUKISU_VERSION: v4.1.2
+  SUKISU_REF: ede8a21fb215eccca099db26214308e7f8685a47
+  SUSFS_VERSION: v2.1.0
+  SUSFS_REF: 86114db0c49f20fa7857b8b559f3ab87cbc2d00d
+  SUSFS_REPO: https://gitlab.com/simonpunk/susfs4ksu.git
   CLANG_VERSION: ${{ inputs.clang || 'r383902b' }}
   PERF_PROFILE: ${{ inputs.performance_profile || 'performance' }}
   HZ_CHOICE: ${{ inputs.hz || '1000' }}
@@ -137,7 +154,7 @@ jobs:
       - name: Checkout kernel
         uses: actions/checkout@v7.0.1
         with:
-          ref: lineage-20
+          ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 1
 
       - name: Install build dependencies
@@ -186,6 +203,72 @@ jobs:
           aarch64-linux-gnu-ld --version
           aarch64-linux-gnu-gcc --version | head -n 1
           arm-linux-gnueabi-gcc --version | head -n 1
+      - name: Integrate selected root implementation
+        if: env.ROOT_IMPL != 'none'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          rm -rf KernelSU susfs4ksu
+
+          echo "[root] Integrating $ROOT_IMPL"
+          git clone --depth=1 --branch "$SUKISU_VERSION" https://github.com/SukiSU-Ultra/SukiSU-Ultra.git KernelSU
+
+          test "$(git -C KernelSU rev-parse HEAD)" = "$SUKISU_REF"
+          test -f KernelSU/kernel/Kconfig
+          test -f KernelSU/kernel/Kbuild
+
+          rm -rf drivers/kernelsu
+          ln -s ../KernelSU/kernel drivers/kernelsu
+
+          grep -Fq 'obj-$(CONFIG_KSU) += kernelsu/' drivers/Makefile || \
+            printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -Fq 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || \
+            sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+
+          test -L drivers/kernelsu
+          test "$(readlink drivers/kernelsu)" = "../KernelSU/kernel"
+
+          if [ "$ROOT_IMPL" = "sukisu-susfs" ]; then
+            git clone "$SUSFS_REPO" susfs4ksu
+            git -C susfs4ksu fetch --depth=1 origin "$SUSFS_REF"
+            git -C susfs4ksu checkout --detach "$SUSFS_REF"
+
+            test "$(git -C susfs4ksu rev-parse HEAD)" = "$SUSFS_REF"
+            test -f susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.9.patch
+            test -f susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
+            test -f susfs4ksu/kernel_patches/fs/susfs.c
+            test -f susfs4ksu/kernel_patches/include/linux/susfs.h
+            test -f susfs4ksu/kernel_patches/include/linux/susfs_def.h
+
+            grep -Fq '#define SUSFS_VERSION "v2.1.0"' susfs4ksu/kernel_patches/include/linux/susfs.h
+
+            cp susfs4ksu/kernel_patches/fs/* fs/
+            cp susfs4ksu/kernel_patches/include/linux/* include/linux/
+
+            (
+              cd KernelSU
+              patch -p1 --forward --batch < ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
+            )
+
+            patch -p1 --forward --batch < susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.9.patch
+
+            if find . -name '*.rej' -o -name '*.orig' | grep -q .; then
+              echo "SUSFS patch left reject/original files in the tree." >&2
+              exit 1
+            fi
+
+            grep -Fq 'config KSU_SUSFS' KernelSU/kernel/Kconfig
+            grep -Fq 'SUSFS_VERSION "v2.1.0"' include/linux/susfs.h
+          elif [ "$ROOT_IMPL" != "sukisu-ultra" ]; then
+            echo "Unsupported root implementation: $ROOT_IMPL" >&2
+            exit 1
+          fi
+
+          printf 'root_impl=%s\n' "$ROOT_IMPL" >> "$GITHUB_ENV"
+          printf 'sukisu_ref=%s\n' "$SUKISU_REF" >> "$GITHUB_ENV"
+          printf 'susfs_ref=%s\n' "$SUSFS_REF" >> "$GITHUB_ENV"
+          echo "[root] Integration completed successfully."
       - name: Validate kernel feature support
         shell: bash
         run: |
@@ -378,6 +461,28 @@ jobs:
 
           scripts/config --file out/.config --disable PSI
 
+          case "$ROOT_IMPL" in
+            none)
+              scripts/config --file out/.config --disable KSU 2>/dev/null || true
+              scripts/config --file out/.config --disable KPM 2>/dev/null || true
+              ;;
+            sukisu-ultra)
+              scripts/config --file out/.config --enable KSU
+              scripts/config --file out/.config --enable KSU_MANUAL_SU
+              scripts/config --file out/.config --disable KPM
+              ;;
+            sukisu-susfs)
+              scripts/config --file out/.config --enable KSU
+              scripts/config --file out/.config --enable KSU_MANUAL_SU
+              scripts/config --file out/.config --enable KSU_SUSFS
+              scripts/config --file out/.config --disable KPM
+              ;;
+            *)
+              echo "Unsupported root implementation: $ROOT_IMPL" >&2
+              exit 1
+              ;;
+          esac
+
           if [ "$CORTEX_TUNE" = "on" ]; then
             KCFLAGS="-mcpu=cortex-a53+crypto"
           else
@@ -387,7 +492,31 @@ jobs:
 
           make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" olddefconfig
 
-          grep -E "^(CONFIG_KPROBES=|CONFIG_KALLSYMS_ALL=|CONFIG_HZ=|CONFIG_HZ_|CONFIG_CPU_FREQ_DEFAULT_GOV=|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_IOSCHED=|CONFIG_ZRAM_WRITEBACK=|CONFIG_PREEMPT|CONFIG_PSI=|CONFIG_LOCALVERSION=)" out/.config || true
+          grep -E "^(CONFIG_KSU=|CONFIG_KSU_MANUAL_SU=|CONFIG_KSU_SUSFS=|CONFIG_KPM=|CONFIG_KPROBES=|CONFIG_KALLSYMS_ALL=|CONFIG_HZ=|CONFIG_HZ_|CONFIG_CPU_FREQ_DEFAULT_GOV=|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_IOSCHED=|CONFIG_ZRAM_WRITEBACK=|CONFIG_PREEMPT|CONFIG_PSI=|CONFIG_LOCALVERSION=)" out/.config || true
+
+          case "$ROOT_IMPL" in
+            none)
+              test "$(grep -c "^CONFIG_KSU=y$" out/.config || true)" -eq 0
+              test "$(grep -c "^CONFIG_KPM=y$" out/.config || true)" -eq 0
+              ;;
+            sukisu-ultra)
+              test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KSU_MANUAL_SU=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KSU_SUSFS=y$" out/.config || true)" -eq 0
+              test "$(grep -c "^CONFIG_KPM=y$" out/.config || true)" -eq 0
+              ;;
+            sukisu-susfs)
+              test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KSU_MANUAL_SU=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KSU_SUSFS=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KPM=y$" out/.config || true)" -eq 0
+              ;;
+            *)
+              echo "Unsupported root implementation: $ROOT_IMPL" >&2
+              exit 1
+              ;;
+          esac
+
           test "$(grep -c "^CONFIG_ARCH_ZQL1871=y$" out/.config)" -eq 1
           test "$(grep -c "^CONFIG_ARCH_SDM450=y$" out/.config)" -eq 1
           test "$(grep -c "^CONFIG_ARCH_MSM8953=y$" out/.config)" -eq 1
@@ -422,6 +551,11 @@ jobs:
           {
             echo "kernel_name=$KERNEL_NAME_INPUT"
             echo "kernel_name_slug=$KERNEL_NAME_SLUG"
+            echo "root_impl=$ROOT_IMPL"
+            echo "sukisu_version=$SUKISU_VERSION"
+            echo "sukisu_ref=$SUKISU_REF"
+            echo "susfs_version=$SUSFS_VERSION"
+            echo "susfs_ref=$SUSFS_REF"
             echo "clang=$CLANG_VERSION"
             echo "performance_profile=$PERF_PROFILE"
             echo "hz=$HZ_CHOICE"
@@ -567,6 +701,7 @@ jobs:
           fi
 
 
+          CAPTION="$(basename "$ZIP_PATH") | root=$ROOT_IMPL | SukiSU=$SUKISU_VERSION | SUSFS=$SUSFS_VERSION"
           RESPONSE="$(curl -fsS --retry 3 --retry-all-errors \
             -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
             -F "chat_id=$TELEGRAM_CHAT_ID" \
