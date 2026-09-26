@@ -1,3 +1,8 @@
+test -f "$KSU_DIR/sulog/fd.c" || die "SukiSU sulog fd.c missing"
+if grep -Fq '__poll_t' "$KSU_DIR/sulog/fd.c"; then
+  die "Linux 4.9 sulog fd still uses unavailable __poll_t"
+fi
+grep -Fq 'static unsigned int ksu_sulog_poll' "$KSU_DIR/sulog/fd.c" || die "Linux 4.9 sulog poll compatibility missing"
 test -f "$KSU_DIR/sulog/event.c" || die "SukiSU sulog event.c missing"
 if grep -Fq '<linux/minmax.h>' "$KSU_DIR/sulog/event.c"; then
   die "Linux 4.9 sulog still includes unavailable linux/minmax.h"
