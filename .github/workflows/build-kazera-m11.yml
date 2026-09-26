@@ -475,19 +475,23 @@ jobs:
           # fs/stat.c: this tree still has the legacy 4.9 getattr ABI.
           st = Path("fs/stat.c")
           s = st.read_text(encoding="utf-8")
-          if "susfs_sus_kstat_spoof_generic_fillattr" not in s:
-              inc="#include <asm/unistd.h>\n"
-              addition="""#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+          decl = """#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
           extern void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat);
-          #endif
-
-          """
-              s=s.replace(inc,inc+"\n"+addition,1)
-          marker="""	stat->blocks = inode->i_blocks;
+          #endif"""
+          # Always normalize the declaration before generic_fillattr().
+          # The generic SUSFS patch can place the declaration after the
+          # first call on this older Samsung 4.9 tree.
+          s = s.replace(decl + "\n\n", "").replace(decl + "\n", "")
+          inc="#include <asm/unistd.h>\n"
+          addition=decl + "\n\n"
+          if inc not in s:
+              raise SystemExit("stat.c include anchor missing")
+          s=s.replace(inc,inc+"\n"+addition,1)
+          marker="""\tstat->blocks = inode->i_blocks;
           }"""
-          repl="""	stat->blocks = inode->i_blocks;
+          repl="""\tstat->blocks = inode->i_blocks;
           #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-          	susfs_sus_kstat_spoof_generic_fillattr(inode, stat);
+          \tsusfs_sus_kstat_spoof_generic_fillattr(inode, stat);
           #endif
           }"""
           if repl not in s:
