@@ -968,20 +968,18 @@ jobs:
           rm -rf package-input dist .anykernel3
           mkdir -p package-input dist
 
-          # Supply the raw kernel only. The stock boot image already contains
-          # the three appended DTBs; AnyKernel3 preserves DTB 0 and DTB 2 and
-          # replaces only DTB 1 (SDM450 + PMI632) with oc-dtb.
-          cp out/arch/arm64/boot/Image package-input/Image
-          cp out/arch/arm64/boot/dts/samsung/sdm450-pmi632.dtb package-input/oc-dtb
+          # Preserve the stock Samsung DTB from the boot partition.
+          # OC is implemented in kernel drivers; no generated DTB replaces
+          # the vendor DTB during installation.
+          cp out/arch/arm64/boot/Image.gz package-input/Image.gz
 
           test -s package-input/Image.gz
-          test "$(fdtget -t s 'out/arch/arm64/boot/dts/samsung/sdm450-pmi632.dtb' / model)" = "Qualcomm Technologies, Inc. SDM450 + PMI632 SOC"
       - name: Package AnyKernel3
         shell: bash
         run: |
           set -euxo pipefail
 
-          test -s package-input/Image
+          test -s package-input/Image.gz
           [ -n "$KERNEL_NAME_INPUT" ] || KERNEL_NAME_INPUT="NOCTURNE-LIMITED"
           [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="NOCTURNE-LIMITED"
 
@@ -1005,8 +1003,9 @@ jobs:
           bash -n .anykernel3/anykernel.sh
 
           cp package-input/Image.gz .anykernel3/Image.gz
-
           test -s .anykernel3/Image.gz
+          test ! -e .anykernel3/oc-dtb
+          test ! -e .anykernel3/Image.gz-dtb
 
           python3 - <<'PY'
           import os
@@ -1023,24 +1022,23 @@ jobs:
           if len(matches) != 1:
               raise SystemExit('kernel.string line not found exactly once')
           lines[matches[0]] = 'kernel.string=' + kernel_name
-          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          path.write_text('\\n'.join(lines) + '\\n', encoding='utf-8')
           PY
           test -s .anykernel3/Image.gz
-          test ! -e .anykernel3/oc-dtb
           bash -n .anykernel3/anykernel.sh
 
           zip_path="$GITHUB_WORKSPACE/dist/$KERNEL_NAME_SLUG-AnyKernel3.zip"
           cd .anykernel3
           zip -r9 "$zip_path" \
             anykernel.sh \
-            Image \
-            oc-dtb \
+            Image.gz \
             META-INF \
             tools \
             modules \
             patch \
             ramdisk
           cd "$GITHUB_WORKSPACE"
+
           test -s "$zip_path"
           unzip -tq "$zip_path"
           unzip -l "$zip_path" | grep -q "Image.gz"
