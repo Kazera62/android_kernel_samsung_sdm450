@@ -319,6 +319,41 @@ jobs:
               "KSU_VERSION_FULL := v4.1.2-f96f6cd2@builtin",
           )
 
+          # Port the SukiSU-Ultra Fixed mitigation from JackA1ltman's
+          # NonGKI_Kernel_Build_2nd. The full patch targets a slightly
+          # different SukiSU tree, so apply only the compatible hunks to the
+          # exact v4.1.2-f96 source.
+          selinux_hide = Path("KernelSU/kernel/feature/selinux_hide.c")
+          s = selinux_hide.read_text(encoding="utf-8")
+          s = s.replace(
+              "#ifdef KSU_COMPAT_USE_STATIC_KEY\nDEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
+              "#ifdef KSU_COMPAT_USE_STATIC_KEY\n__maybe_static DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);\n#else\nstatic bool fake_status_initialize_key __read_mostly = false;",
+              1,
+          )
+          s = s.replace(
+              "    if (fake_status)\n        static_key_disable(&fake_status_initialize_key.key);",
+              "    if (fake_status)\n#ifdef KSU_COMPAT_USE_STATIC_KEY\n        static_key_disable(&fake_status_initialize_key.key);\n#else\n        fake_status_initialize_key = true;\n#endif",
+              1,
+          )
+          s = s.replace(
+              "    static_key_disable(&fake_status_initialize_key.key);\n    if (!fake_status)",
+              "#ifdef KSU_COMPAT_USE_STATIC_KEY\n    static_key_disable(&fake_status_initialize_key.key);\n#else\n    fake_status_initialize_key = true;\n#endif\n    if (!fake_status)",
+              1,
+          )
+          selinux_hide.write_text(s, encoding="utf-8")
+
+          ksud = Path("KernelSU/kernel/runtime/ksud.c")
+          s = ksud.read_text(encoding="utf-8")
+          s = s.replace("    ksu_selinux_hide_handle_post_fs_data();\n", "", 1)
+          s = s.replace("                ksu_selinux_hide_handle_second_stage();\n", "", 1)
+          ksud.write_text(s, encoding="utf-8")
+
+          if "#else\nstatic bool fake_status_initialize_key __read_mostly = false;" not in selinux_hide.read_text(encoding="utf-8"):
+              raise SystemExit("SukiSU fixed selinux_hide compatibility hunk was not applied")
+          ksud_text = ksud.read_text(encoding="utf-8")
+          if "ksu_selinux_hide_handle_post_fs_data();" in ksud_text or "ksu_selinux_hide_handle_second_stage();" in ksud_text:
+              raise SystemExit("SukiSU fixed ksud selinux-hide calls were not removed")
+
           # current_sid() is added below in ksu.c after SELinux objsec.h is included.
           PY
 
