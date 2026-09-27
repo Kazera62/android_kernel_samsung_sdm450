@@ -645,7 +645,7 @@ jobs:
           set -euxo pipefail
           rm -rf out
 
-          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" a11q_open_defconfig
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" HOSTCC="$HOSTCC" HOSTCXX="$HOSTCXX" HOSTLD="$HOSTLD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" a11q_open_defconfig
 
           KERNEL_NAME_SLUG="$(printf '%s' "$KERNEL_NAME_INPUT" | LC_ALL=C sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
           [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="NOCTURNE-LIMITED"
@@ -941,8 +941,8 @@ jobs:
 
           if [ "$CORTEX_TUNE" = "on" ]; then KCFLAGS="-mcpu=cortex-a53+crypto"; else KCFLAGS=""; fi
 
-          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="${KAZERA_LD:-$LD}" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" CLANG_PREFIX32="--prefix=/usr/bin/arm-linux-gnueabi-" KCFLAGS="$KCFLAGS" dtbs -j"$(nproc)"
-          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="${KAZERA_LD:-$LD}" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" CLANG_PREFIX32="--prefix=/usr/bin/arm-linux-gnueabi-" KCFLAGS="$KCFLAGS" Image.gz-dtb vmlinux -j"$(nproc)"
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="${KAZERA_LD:-$LD}" HOSTCC="$HOSTCC" HOSTCXX="$HOSTCXX" HOSTLD="$HOSTLD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" CLANG_PREFIX32="--prefix=/usr/bin/arm-linux-gnueabi-" KCFLAGS="$KCFLAGS" dtbs -j"$(nproc)"
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="${KAZERA_LD:-$LD}" HOSTCC="$HOSTCC" HOSTCXX="$HOSTCXX" HOSTLD="$HOSTLD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" CLANG_PREFIX32="--prefix=/usr/bin/arm-linux-gnueabi-" KCFLAGS="$KCFLAGS" Image.gz-dtb vmlinux -j"$(nproc)"
           NM=llvm-nm scripts/mksysmap out/vmlinux out/System.map
 
           test -s out/arch/arm64/boot/Image.gz
