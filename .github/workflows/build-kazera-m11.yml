@@ -463,8 +463,8 @@ jobs:
             resukisu-susfs)
               scripts/config --file out/.config --enable THREAD_INFO_IN_TASK
               scripts/config --file out/.config --enable KSU
-              scripts/config --disable KSU_MANUAL_HOOK 2>/dev/null || true
-              scripts/config --disable KSU_TRACEPOINT_HOOK 2>/dev/null || true
+              scripts/config --file out/.config --disable KSU_MANUAL_HOOK 2>/dev/null || true
+              scripts/config --file out/.config --disable KSU_TRACEPOINT_HOOK 2>/dev/null || true
               scripts/config --file out/.config --enable KSU_SUSFS
               for susfs_cfg in \
                 KSU_SUSFS_SUS_PATH \
