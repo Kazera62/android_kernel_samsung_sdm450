@@ -370,12 +370,44 @@ jobs:
           esac
 
           if [ "$TOOLCHAIN_MODE" = "aosp" ]; then
-            test -n "$CLANG_BRANCH"
             test -n "$CLANG_DIR"
 
-            git clone --depth=1 --filter=blob:none --sparse --branch "$CLANG_BRANCH" \
-              https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-toolchain
+            # Do not assume the current main-kernel branch still contains old
+            # historical prebuilts. Probe release branches and use the first
+            # branch that actually contains the requested Clang directory.
+            AOSP_REPO="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86"
+            AOSP_BRANCHES=(
+              android14-release
+              android13-release
+              android12-s4-release
+              android12-qpr3-s1-release
+              android11-qpr3-release
+              android11-release
+              android10-release
+            )
+
+            rm -rf clang-toolchain
+            git init -q clang-toolchain
+            git -C clang-toolchain remote add origin "$AOSP_REPO"
+            FOUND_AOSP_BRANCH=""
+
+            for branch in "${AOSP_BRANCHES[@]}"; do
+              echo "[clang] probing AOSP branch: $branch"
+              if ! git -C clang-toolchain fetch --depth=1 --filter=blob:none origin "refs/heads/$branch" >/dev/null 2>&1; then
+                continue
+              fi
+              if git -C clang-toolchain ls-tree -d --name-only FETCH_HEAD -- "$CLANG_DIR" | grep -Fxq "$CLANG_DIR"; then
+                FOUND_AOSP_BRANCH="$branch"
+                break
+              fi
+            done
+
+            test -n "$FOUND_AOSP_BRANCH"
+            echo "[clang] found $CLANG_DIR on $FOUND_AOSP_BRANCH"
+
+            git -C clang-toolchain sparse-checkout init --cone
             git -C clang-toolchain sparse-checkout set "$CLANG_DIR"
+            git -C clang-toolchain checkout -q --detach FETCH_HEAD
 
             TOOLCHAIN_PATH="$TOOLCHAIN_ROOT/$CLANG_DIR"
             test -d "clang-toolchain/$CLANG_DIR"
@@ -395,22 +427,43 @@ jobs:
           elif [ "$TOOLCHAIN_MODE" = "zyc" ]; then
             TOOLCHAIN_PATH="$TOOLCHAIN_ROOT/$CLANG_VERSION"
             mkdir -p "$TOOLCHAIN_PATH"
+            case "$CLANG_VERSION" in
+              zyc-14.0.6)
+                ZYC_RELEASE="14.0.6-20220724-release"
+                ZYC_TARBALL="Clang-14.0.6-20220724.tar.gz"
+                ;;
+              zyc-15.0.7)
+                ZYC_RELEASE="15.0.7-20260507-release"
+                ZYC_TARBALL="Clang-15.0.7-20260507.tar.gz"
+                ;;
+              zyc-16.0.6)
+                ZYC_RELEASE="16.0.6-20260510-release"
+                ZYC_TARBALL="Clang-16.0.6-20260510.tar.gz"
+                ;;
+              *)
+                echo "Unsupported ZyC Clang: $CLANG_VERSION" >&2
+                exit 1
+                ;;
+            esac
+
+            echo "[clang] ZyC release: $ZYC_RELEASE"
+            echo "[clang] ZyC asset: $ZYC_TARBALL"
             curl -fL --retry 3 --retry-all-errors \
               "https://github.com/ZyCromerZ/Clang/releases/download/$ZYC_RELEASE/$ZYC_TARBALL" \
               -o "$TOOLCHAIN_PATH/$ZYC_TARBALL"
+            test -s "$TOOLCHAIN_PATH/$ZYC_TARBALL"
             tar -xzf "$TOOLCHAIN_PATH/$ZYC_TARBALL" -C "$TOOLCHAIN_PATH"
             rm -f "$TOOLCHAIN_PATH/$ZYC_TARBALL"
 
             test -x "$TOOLCHAIN_PATH/bin/clang"
-            test -x "$TOOLCHAIN_PATH/bin/ld.lld"
             export PATH="$TOOLCHAIN_PATH/bin:$PATH"
             echo "$TOOLCHAIN_PATH/bin" >> "$GITHUB_PATH"
 
             command -v clang
-            command -v ld.lld
             clang --version
-            ld.lld --version
+            CLANG_LABEL="$CLANG_LABEL ($ZYC_RELEASE)"
 
+          elif [ "$TOOLCHAIN_MODE" = "proton" ]; then
           elif [ "$TOOLCHAIN_MODE" = "proton" ]; then
             git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
 
