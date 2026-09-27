@@ -969,8 +969,13 @@ jobs:
           mkdir -p package-input dist
 
           cp out/arch/arm64/boot/Image.gz-dtb package-input/Image.gz-dtb
+          # Samsung boot images may carry DTB as a separate boot-image component.
+          # Ship the active SDM450 + PMI632 DTB separately so AnyKernel3 replaces
+          # an older stock DTB instead of preserving it during repack.
+          cp out/arch/arm64/boot/dts/samsung/sdm450-pmi632.dtb package-input/dtb
 
           test -s package-input/Image.gz-dtb
+          test -s package-input/dtb
       - name: Package AnyKernel3
         shell: bash
         run: |
@@ -999,6 +1004,10 @@ jobs:
           bash -n .anykernel3/anykernel.sh
 
           cp package-input/Image.gz-dtb .anykernel3/Image.gz-dtb
+          cp package-input/dtb .anykernel3/dtb
+
+          test -s .anykernel3/Image.gz-dtb
+          test -s .anykernel3/dtb
 
           python3 - <<'PY'
           import os
@@ -1016,6 +1025,7 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
           test -s .anykernel3/Image.gz-dtb
+          test -s .anykernel3/dtb
           bash -n .anykernel3/anykernel.sh
 
           zip_path="$GITHUB_WORKSPACE/dist/$KERNEL_NAME_SLUG-AnyKernel3.zip"
@@ -1024,6 +1034,7 @@ jobs:
             zip -r9 "$zip_path" \
               anykernel.sh \
               Image.gz-dtb \
+              dtb \
               META-INF \
               tools \
               modules \
@@ -1034,6 +1045,7 @@ jobs:
           test -s "$zip_path"
           unzip -tq "$zip_path"
           unzip -l "$zip_path" | grep -q "Image.gz-dtb"
+          unzip -l "$zip_path" | grep -q "dtb"
           unzip -l "$zip_path" | grep -q "anykernel.sh"
           unzip -l "$zip_path" | grep -q "META-INF/com/google/android/update-binary"
           unzip -l "$zip_path" | grep -q "tools/ak3-core.sh"
