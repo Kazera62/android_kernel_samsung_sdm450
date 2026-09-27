@@ -175,7 +175,7 @@ env:
   ZRAM_WB: ${{ inputs.zram_writeback || 'on' }}
   CORTEX_TUNE: ${{ inputs.cortex_a53_tune || 'on' }}
   ANYKERNEL3_REPO: https://github.com/Kazera62/AnyKernel3.git
-  ANYKERNEL3_REF: 99606664634b9aa0fa047d0490f851e8a1e74d91
+  ANYKERNEL3_REF: 575c60a9382f2907caccb8dc9e5bb1c03e3d0d47
   ARCH: arm64
   SUBARCH: arm64
   CC: clang
