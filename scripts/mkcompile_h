@@ -53,6 +53,12 @@ else
 	LINUX_COMPILE_HOST=$KBUILD_BUILD_HOST
 fi
 
+# Kazera build identity: keep the kernel banner as Zenata@Github.
+# This intentionally overrides KBUILD_BUILD_USER/HOST so the identity
+# remains fixed regardless of the GitHub Actions runner hostname/user.
+LINUX_COMPILE_BY="Zenata"
+LINUX_COMPILE_HOST="Github"
+
 UTS_VERSION="#$VERSION"
 CONFIG_FLAGS=""
 if [ -n "$SMP" ] ; then CONFIG_FLAGS="SMP"; fi

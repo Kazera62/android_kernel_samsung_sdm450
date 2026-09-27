@@ -4,34 +4,72 @@ on:
   push:
     branches:
       - lineage-20
+      - Kazera-OC
   pull_request:
     branches:
       - lineage-20
+      - Kazera-OC
   workflow_dispatch:
     inputs:
       kernel_name:
         description: "Nama kernel pada perangkat dan file ZIP."
         type: string
         required: true
-        default: "Kazera M11/A11"
+        default: "-NOCTURNE-LIMITED"
       telegram:
         description: "Kirim ZIP AnyKernel3 hasil build ke Telegram."
         type: choice
         required: true
-        default: "off"
+        default: "on"
         options:
           - "off"
           - "on"
+      root:
+        description: "Pilih varian root kernel."
+        type: choice
+        required: true
+        default: "resukisu-susfs"
+        options:
+          - none
+          - resukisu-susfs
       clang:
         description: "Pilih Android Clang toolchain untuk kompilasi kernel."
         type: choice
         required: true
-        default: r383902b
+        default: r416183b
         options:
-          - r383902b
+          # Verified/currently preferred
           - r416183b
+          # Custom kernel toolchains
+          - proton-clang
+          - zyc-14.0.6
+          - zyc-15.0.7
+          - zyc-16.0.6
+          - sdclang-8.0.6
+          # Newer AOSP toolchains (experimental on 4.9.319)
+          - r450784e
+          - r450784d
+          - r450784c
+          - r450784b
+          - r450784
+          - r445002
+          - r437112b
+          - r437112
+          - r433403b
+          - r433403
+          - r428724
+          - r416183c
+          - r416183b1
+          - r416183
+          - r412851
+          - r407598
+          - r399163b
+          # Older AOSP toolchains
+          - r383902b
+          - r377782b
           - r370808
           - r365631c
+          - r353983c
       performance_profile:
         description: "Pilih preset scheduler, preemption, boost, dan WALT kernel."
         type: choice
@@ -62,6 +100,9 @@ on:
           - schedutil
           - interactive
           - ondemand
+          - conservative
+          - powersave
+          - userspace
           - stock
       io_scheduler:
         description: "Pilih block I/O scheduler default."
@@ -81,6 +122,15 @@ on:
         options:
           - bbr
           - cubic
+          - reno
+          - bic
+          - westwood
+          - htcp
+          - hybla
+          - vegas
+          - veno
+          - dctcp
+          - cdg
           - stock
       zram_writeback:
         description: "Aktifkan zRAM writeback ke storage."
@@ -107,9 +157,16 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  KERNEL_NAME_INPUT: ${{ inputs.kernel_name || 'Kazera M11/A11' }}
-  TELEGRAM_ENABLE: ${{ inputs.telegram || 'off' }}
-  CLANG_VERSION: ${{ inputs.clang || 'r383902b' }}
+  KERNEL_NAME_INPUT: ${{ inputs.kernel_name || 'NOCTURNE-LIMITED' }}
+  TELEGRAM_ENABLE: ${{ inputs.telegram || 'on' }}
+  ROOT_IMPL: ${{ inputs.root || 'resukisu-susfs' }}
+  RESUKISU_RELEASE: 4.2.0
+  RESUKISU_VERSION: 35172
+  RESUKISU_REF: 6803643e19e2e6e8287f96461aabb93bdd6c47fa
+  SUSFS_VERSION: v2.3.0
+  JACK_PATCH_REF: 9c3b7a0bcfd8176fd4bc6985df52119d1123b3c2
+  PATCHES_REPO: https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/9c3b7a0bcfd8176fd4bc6985df52119d1123b3c2
+  CLANG_VERSION: ${{ inputs.clang || 'r416183b' }}
   PERF_PROFILE: ${{ inputs.performance_profile || 'performance' }}
   HZ_CHOICE: ${{ inputs.hz || '1000' }}
   CPU_GOV: ${{ inputs.cpu_governor || 'performance' }}
@@ -126,6 +183,13 @@ env:
   CLANG_TRIPLE: aarch64-linux-gnu-
   CROSS_COMPILE: aarch64-linux-gnu-
   CROSS_COMPILE_ARM32: arm-linux-gnueabi-
+  # Keep Kbuild host tools on Ubuntu's native linker; custom Clang PATHs may ship old bin/ld.
+  # Kbuild 4.9 links host multi-object tools through HOSTCC/HOSTCXX,
+  # not HOSTLD. Force GCC/G++ to resolve the linker from /usr/bin even
+  # when a legacy Clang toolchain prepends its own bin/ to PATH.
+  HOSTCC: "gcc -B/usr/bin/"
+  HOSTCXX: "g++ -B/usr/bin/"
+  HOSTLD: /usr/bin/ld.bfd
 
 jobs:
   build-kernel:
@@ -133,11 +197,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
 
+    outputs:
+      clang_label: ${{ steps.select-clang.outputs.clang_label }}
     steps:
       - name: Checkout kernel
         uses: actions/checkout@v7.0.1
         with:
-          ref: lineage-20
+          ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 1
 
       - name: Install build dependencies
@@ -151,41 +217,393 @@ jobs:
             binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi zip unzip
 
       - name: Select and install Clang toolchain
+        id: select-clang
         shell: bash
         run: |
           set -euxo pipefail
+
+          TOOLCHAIN_ROOT="$HOME/toolchains"
+          rm -rf "$TOOLCHAIN_ROOT" clang-toolchain sdclang-tools
+          mkdir -p "$TOOLCHAIN_ROOT"
+
+          CLANG_LABEL="$CLANG_VERSION"
+          TOOLCHAIN_MODE="aosp"
+          CLANG_DIR=""
+
           case "$CLANG_VERSION" in
-            r383902b|r370808|r365631c)
-              CLANG_BRANCH="android11-qpr3-release"
-              ;;
             r416183b)
-              CLANG_BRANCH="android12-qpr3-s1-release"
+              CLANG_LABEL="AOSP Clang r416183b (Verified)"
+              CLANG_DIR="clang-r416183b"
+              ;;
+            r450784e)
+              CLANG_LABEL="AOSP Clang r450784e (Experimental)"
+              CLANG_DIR="clang-r450784e"
+              ;;
+            r450784d)
+              CLANG_LABEL="AOSP Clang r450784d (Experimental)"
+              CLANG_DIR="clang-r450784d"
+              ;;
+            r450784c)
+              CLANG_LABEL="AOSP Clang r450784c (Experimental)"
+              CLANG_DIR="clang-r450784c"
+              ;;
+            r450784b)
+              CLANG_LABEL="AOSP Clang r450784b (Experimental)"
+              CLANG_DIR="clang-r450784b"
+              ;;
+            r450784)
+              CLANG_LABEL="AOSP Clang r450784 (Experimental)"
+              CLANG_DIR="clang-r450784"
+              ;;
+            r445002)
+              CLANG_LABEL="AOSP Clang r445002 (Experimental)"
+              CLANG_DIR="clang-r445002"
+              ;;
+            r437112b)
+              CLANG_LABEL="AOSP Clang r437112b (Experimental)"
+              CLANG_DIR="clang-r437112b"
+              ;;
+            r437112)
+              CLANG_LABEL="AOSP Clang r437112 (Experimental)"
+              CLANG_DIR="clang-r437112"
+              ;;
+            r433403b)
+              CLANG_LABEL="AOSP Clang r433403b (Experimental)"
+              CLANG_DIR="clang-r433403b"
+              ;;
+            r433403)
+              CLANG_LABEL="AOSP Clang r433403 (Experimental)"
+              CLANG_DIR="clang-r433403"
+              ;;
+            r428724)
+              CLANG_LABEL="AOSP Clang r428724 (Experimental)"
+              CLANG_DIR="clang-r428724"
+              ;;
+            r416183c)
+              CLANG_LABEL="AOSP Clang r416183c"
+              CLANG_DIR="clang-r416183c"
+              ;;
+            r416183b1)
+              CLANG_LABEL="AOSP Clang r416183b1"
+              CLANG_DIR="clang-r416183b1"
+              ;;
+            r416183)
+              CLANG_LABEL="AOSP Clang r416183"
+              CLANG_DIR="clang-r416183"
+              ;;
+            r412851)
+              CLANG_LABEL="AOSP Clang r412851"
+              CLANG_DIR="clang-r412851"
+              ;;
+            r407598)
+              CLANG_LABEL="AOSP Clang r407598"
+              CLANG_DIR="clang-r407598"
+              ;;
+            r399163b)
+              CLANG_LABEL="AOSP Clang r399163b"
+              CLANG_DIR="clang-r399163b"
+              ;;
+            r383902b)
+              CLANG_LABEL="AOSP Clang r383902b"
+              CLANG_DIR="clang-r383902b"
+              ;;
+            r377782b)
+              CLANG_LABEL="AOSP Clang r377782b"
+              CLANG_DIR="clang-r377782b"
+              ;;
+            r370808)
+              CLANG_LABEL="AOSP Clang r370808"
+              CLANG_DIR="clang-r370808"
+              ;;
+            r365631c)
+              CLANG_LABEL="AOSP Clang r365631c"
+              CLANG_DIR="clang-r365631c"
+              ;;
+            r353983c)
+              CLANG_LABEL="AOSP Clang r353983c"
+              CLANG_DIR="clang-r353983c"
+              ;;
+            proton-clang)
+              CLANG_LABEL="Proton Clang (custom / rolling)"
+              TOOLCHAIN_MODE="proton"
+              ;;
+            sdclang-8.0.6)
+              CLANG_LABEL="Qualcomm SDClang 8.0.6"
+              TOOLCHAIN_MODE="sdclang"
+              ;;
+            zyc-14.0.6)
+              CLANG_LABEL="ZyC Clang 14.0.6"
+              TOOLCHAIN_MODE="zyc"
+              ZYC_RELEASE="14.0.6-20220724-release"
+              ZYC_TARBALL="Clang-14.0.6-20220724.tar.gz"
+              ;;
+            zyc-15.0.7)
+              CLANG_LABEL="ZyC Clang 15.0.7"
+              TOOLCHAIN_MODE="zyc"
+              ZYC_RELEASE="15.0.7-20260507-release"
+              ZYC_TARBALL="Clang-15.0.7-20260507.tar.gz"
+              ;;
+            zyc-16.0.6)
+              CLANG_LABEL="ZyC Clang 16.0.6"
+              TOOLCHAIN_MODE="zyc"
+              ZYC_RELEASE="16.0.6-20260510-release"
+              ZYC_TARBALL="Clang-16.0.6-20260510.tar.gz"
               ;;
             *)
               echo "Unsupported Clang: $CLANG_VERSION" >&2
               exit 1
               ;;
           esac
-          TOOLCHAIN_ROOT="$HOME/clang-$CLANG_VERSION"
-          rm -rf "$TOOLCHAIN_ROOT" clang-toolchain
-          if ! git clone --depth=1 --filter=blob:none --sparse --branch "$CLANG_BRANCH" https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-toolchain; then
+
+          if [ "$TOOLCHAIN_MODE" = "aosp" ]; then
+            test -n "$CLANG_DIR"
+
+            # Do not assume the current main-kernel branch still contains old
+            # historical prebuilts. Probe release branches and use the first
+            # branch that actually contains the requested Clang directory.
+            AOSP_REPO="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86"
+            AOSP_BRANCHES=(
+              android14-release
+              android13-release
+              android12-s4-release
+              android12-qpr3-s1-release
+              android11-qpr3-release
+              android11-release
+              android10-release
+            )
+
             rm -rf clang-toolchain
-            git clone --depth=1 --sparse --branch "$CLANG_BRANCH" https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-toolchain
+            git init -q clang-toolchain
+            git -C clang-toolchain remote add origin "$AOSP_REPO"
+            FOUND_AOSP_BRANCH=""
+
+            for branch in "${AOSP_BRANCHES[@]}"; do
+              echo "[clang] probing AOSP branch: $branch"
+              if ! git -C clang-toolchain fetch --depth=1 --filter=blob:none origin "refs/heads/$branch" >/dev/null 2>&1; then
+                continue
+              fi
+              if git -C clang-toolchain ls-tree -d --name-only FETCH_HEAD -- "$CLANG_DIR" | grep -Fxq "$CLANG_DIR"; then
+                FOUND_AOSP_BRANCH="$branch"
+                break
+              fi
+            done
+
+            test -n "$FOUND_AOSP_BRANCH"
+            echo "[clang] found $CLANG_DIR on $FOUND_AOSP_BRANCH"
+
+            git -C clang-toolchain sparse-checkout init --cone
+            git -C clang-toolchain sparse-checkout set "$CLANG_DIR"
+            git -C clang-toolchain checkout -q --detach FETCH_HEAD
+
+            TOOLCHAIN_PATH="$TOOLCHAIN_ROOT/$CLANG_DIR"
+            test -d "clang-toolchain/$CLANG_DIR"
+            mv "clang-toolchain/$CLANG_DIR" "$TOOLCHAIN_PATH"
+            rm -rf clang-toolchain
+
+            test -x "$TOOLCHAIN_PATH/bin/clang"
+            test -x "$TOOLCHAIN_PATH/bin/ld.lld"
+            export PATH="$TOOLCHAIN_PATH/bin:$PATH"
+            echo "$TOOLCHAIN_PATH/bin" >> "$GITHUB_PATH"
+
+            command -v clang
+            command -v ld.lld
+            clang --version
+            ld.lld --version
+
+          elif [ "$TOOLCHAIN_MODE" = "zyc" ]; then
+            TOOLCHAIN_PATH="$TOOLCHAIN_ROOT/$CLANG_VERSION"
+            mkdir -p "$TOOLCHAIN_PATH"
+            case "$CLANG_VERSION" in
+              zyc-14.0.6)
+                ZYC_RELEASE="14.0.6-20220724-release"
+                ZYC_TARBALL="Clang-14.0.6-20220724.tar.gz"
+                ;;
+              zyc-15.0.7)
+                ZYC_RELEASE="15.0.7-20260507-release"
+                ZYC_TARBALL="Clang-15.0.7-20260507.tar.gz"
+                ;;
+              zyc-16.0.6)
+                ZYC_RELEASE="16.0.6-20260510-release"
+                ZYC_TARBALL="Clang-16.0.6-20260510.tar.gz"
+                ;;
+              *)
+                echo "Unsupported ZyC Clang: $CLANG_VERSION" >&2
+                exit 1
+                ;;
+            esac
+
+            echo "[clang] ZyC release: $ZYC_RELEASE"
+            echo "[clang] ZyC asset: $ZYC_TARBALL"
+            curl -fL --retry 3 --retry-all-errors \
+              "https://github.com/ZyCromerZ/Clang/releases/download/$ZYC_RELEASE/$ZYC_TARBALL" \
+              -o "$TOOLCHAIN_PATH/$ZYC_TARBALL"
+            test -s "$TOOLCHAIN_PATH/$ZYC_TARBALL"
+            tar -xzf "$TOOLCHAIN_PATH/$ZYC_TARBALL" -C "$TOOLCHAIN_PATH"
+            rm -f "$TOOLCHAIN_PATH/$ZYC_TARBALL"
+
+            test -x "$TOOLCHAIN_PATH/bin/clang"
+            export PATH="$TOOLCHAIN_PATH/bin:$PATH"
+            echo "$TOOLCHAIN_PATH/bin" >> "$GITHUB_PATH"
+
+            command -v clang
+            clang --version
+            CLANG_LABEL="$CLANG_LABEL ($ZYC_RELEASE)"
+
+          elif [ "$TOOLCHAIN_MODE" = "proton" ]; then
+            git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
+
+            TOOLCHAIN_PATH="$GITHUB_WORKSPACE/proton-clang"
+            test -x "$TOOLCHAIN_PATH/bin/clang"
+            test -x "$TOOLCHAIN_PATH/bin/ld.lld"
+            export PATH="$TOOLCHAIN_PATH/bin:$PATH"
+            echo "$TOOLCHAIN_PATH/bin" >> "$GITHUB_PATH"
+
+            command -v clang
+            command -v ld.lld
+            clang --version
+            ld.lld --version
+
+          else
+            git clone --depth=1 --filter=blob:none --sparse \
+              https://github.com/RyuujiX/android-kernel-tools.git sdclang-tools
+            git -C sdclang-tools sparse-checkout set sdclang/linux-x86_64
+
+            TOOLCHAIN_PATH="$GITHUB_WORKSPACE/sdclang-tools/sdclang/linux-x86_64"
+            test -x "$TOOLCHAIN_PATH/bin/clang"
+            export PATH="$TOOLCHAIN_PATH/bin:$PATH"
+            echo "$TOOLCHAIN_PATH/bin" >> "$GITHUB_PATH"
+
+            command -v clang
+            clang --version
           fi
-          CLANG_DIR="clang-$CLANG_VERSION"
-          git -C clang-toolchain sparse-checkout set "$CLANG_DIR"
-          test -x "clang-toolchain/$CLANG_DIR/bin/clang"
-          mv "clang-toolchain/$CLANG_DIR" "$TOOLCHAIN_ROOT"
-          rm -rf clang-toolchain
-          export PATH="$TOOLCHAIN_ROOT/bin:$PATH"
-          echo "$TOOLCHAIN_ROOT/bin" >> "$GITHUB_PATH"
-          hash -r
-          command -v clang
-          command -v ld.lld
-          clang --version
-          aarch64-linux-gnu-ld --version
-          aarch64-linux-gnu-gcc --version | head -n 1
-          arm-linux-gnueabi-gcc --version | head -n 1
+
+          printf 'clang_label=%s\n' "$CLANG_LABEL" >> "$GITHUB_ENV"
+          printf 'clang_mode=%s\n' "$TOOLCHAIN_MODE" >> "$GITHUB_ENV"
+          printf 'clang_label=%s\n' "$CLANG_LABEL" >> "$GITHUB_OUTPUT"
+
+          echo "Selected toolchain: $CLANG_LABEL"
+      - name: Integrate selected root implementation
+        if: env.ROOT_IMPL != 'none'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          rm -rf KernelSU .ci-patches
+          mkdir -p .ci-patches
+
+          echo "[root] Integrating $ROOT_IMPL from ReSukiSU v$RESUKISU_VERSION"
+          git clone --depth=1 https://github.com/ReSukiSU/ReSukiSU.git KernelSU
+          git -C KernelSU fetch --depth=1 origin "$RESUKISU_REF"
+          git -C KernelSU checkout --detach "$RESUKISU_REF"
+          git -C KernelSU fetch --unshallow origin || true
+
+          test "$(git -C KernelSU rev-parse HEAD)" = "$RESUKISU_REF"
+          test -f KernelSU/kernel/Kconfig
+          test -f KernelSU/kernel/Kbuild
+          grep -Fq 'REPO_NAME := ReSukiSU' KernelSU/kernel/Kbuild
+          grep -Fq 'config KSU_SUSFS' KernelSU/kernel/Kconfig
+
+          KSU_LOCAL_VERSION="$(git -C KernelSU rev-list --count HEAD)"
+          KSU_VERSION_CODE="$((30000 + KSU_LOCAL_VERSION + 700))"
+          echo "[root] ReSukiSU commit=$RESUKISU_REF"
+          echo "[root] ReSukiSU version code=$KSU_VERSION_CODE"
+          test "$KSU_VERSION_CODE" -eq "$RESUKISU_VERSION"
+
+          ln -s ../KernelSU/kernel drivers/kernelsu
+          grep -Fq 'obj-$(CONFIG_KSU) += kernelsu/' drivers/Makefile || printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -Fq 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+
+          JACK_PATCH_BASE="${PATCHES_REPO}/Patches"
+          curl -fsSL "$JACK_PATCH_BASE/Patch/susfs_patch_to_4.9.patch" -o .ci-patches/susfs_patch_to_4.9.patch
+          curl -fsSL "$JACK_PATCH_BASE/susfs_inline_hook_patches.sh" -o .ci-patches/susfs_inline_hook_patches.sh
+          chmod +x .ci-patches/susfs_inline_hook_patches.sh
+
+          grep -Fq '#define SUSFS_VERSION "v2.3.0"' .ci-patches/susfs_patch_to_4.9.patch
+          grep -Fq 'PATCH_LEVEL="2.3.00"' .ci-patches/susfs_inline_hook_patches.sh
+
+          patch -p1 < .ci-patches/susfs_patch_to_4.9.patch || true
+
+          # Repair the one header-context reject caused by the extra fslog include
+          # in this 4.9.319 tree. Other source-layout rejects are tied to
+          # SUSFS features disabled below and are removed explicitly.
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("fs/namespace.c")
+          text = path.read_text(encoding="utf-8")
+          marker = '#include <linux/fslog.h>\n#include "pnode.h"'
+          inject = (
+              '#include <linux/fslog.h>\n'
+              '#ifdef CONFIG_KSU_SUSFS\n'
+              '#include <linux/susfs_def.h>\n'
+              '#endif // #ifdef CONFIG_KSU_SUSFS\n'
+              '#include "pnode.h"\n'
+              '\n'
+              '#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n'
+              'extern bool susfs_is_current_ksu_domain(void);\n'
+              'extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;\n'
+              '#define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */\n'
+              '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT'
+          )
+          if '#include <linux/susfs_def.h>' not in text:
+              if marker not in text:
+                  raise SystemExit("fs/namespace.c include anchor not found")
+              text = text.replace(marker, inject, 1)
+              path.write_text(text, encoding="utf-8")
+
+          rej = Path("fs/namespace.c.rej")
+          if rej.exists():
+              rej_text = rej.read_text(encoding="utf-8")
+              if "linux/susfs_def.h" not in rej_text or "@@ -25,9 +25,20 @@" not in rej_text:
+                  raise SystemExit("Unexpected fs/namespace.c.rej content")
+              rej.unlink()
+
+          for rel in (
+              "fs/proc/cmdline.c.rej",
+              "fs/proc/task_mmu.c.rej",
+              "fs/stat.c.rej",
+          ):
+              p = Path(rel)
+              if p.exists():
+                  p.unlink()
+          PY
+
+          bash .ci-patches/susfs_inline_hook_patches.sh
+
+          # Jack's 2.3.00 generic stat hook uses the newer parameter name
+          # `flags`; this kernel's 4.9.319 vfs_fstatat() uses `flag`.
+          # Repair only that generated call before compiling.
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("fs/stat.c")
+          text = path.read_text(encoding="utf-8")
+          old = "ksu_handle_stat(&dfd, &fname, &flags);"
+          new = "ksu_handle_stat(&dfd, &fname, &flag);"
+          count = text.count(old)
+          if count:
+              text = text.replace(old, new)
+              path.write_text(text, encoding="utf-8")
+          elif "ksu_handle_stat(&dfd, &fname, &flag);" not in text:
+              raise SystemExit("expected ksu_handle_stat stat.c hook was not generated")
+          PY
+
+          if find . -path './KernelSU' -prune -o -name '*.rej' -print | grep -q .; then
+            find . -path './KernelSU' -prune -o -name '*.rej' -print >&2
+            exit 1
+          fi
+          find . -name '*.orig' -not -path './KernelSU/*' -delete
+
+          test -f include/linux/susfs.h
+          grep -Fq '#define SUSFS_VERSION "v2.3.0"' include/linux/susfs.h
+
+          printf 'root_impl=%s\n' "$ROOT_IMPL" >> "$GITHUB_ENV"
+          printf 'resukisu_version=%s\n' "$RESUKISU_VERSION" >> "$GITHUB_ENV"
+          printf 'resukisu_ref=%s\n' "$RESUKISU_REF" >> "$GITHUB_ENV"
+          printf 'susfs_version=%s\n' "$SUSFS_VERSION" >> "$GITHUB_ENV"
+          printf 'susfs_patch_ref=%s\n' "$JACK_PATCH_REF" >> "$GITHUB_ENV"
+
+          echo "[root] Integration completed successfully."
       - name: Validate kernel feature support
         shell: bash
         run: |
@@ -198,16 +616,23 @@ jobs:
           grep -Fq 'config PREEMPT_NONE' kernel/Kconfig.preempt
           grep -Fq 'config PREEMPT_VOLUNTARY' kernel/Kconfig.preempt
           grep -Fq 'config PREEMPT' kernel/Kconfig.preempt
-          grep -Fq 'config CPU_FREQ_GOV_PERFORMANCE' drivers/cpufreq/Kconfig
-          grep -Fq 'config CPU_FREQ_GOV_SCHEDUTIL' drivers/cpufreq/Kconfig
-          grep -Fq 'config CPU_FREQ_GOV_INTERACTIVE' drivers/cpufreq/Kconfig
-          grep -Fq 'config CPU_FREQ_GOV_ONDEMAND' drivers/cpufreq/Kconfig
+          for gov in PERFORMANCE POWERSAVE USERSPACE ONDEMAND CONSERVATIVE SCHEDUTIL INTERACTIVE; do
+            grep -Fq "config CPU_FREQ_GOV_$gov" drivers/cpufreq/Kconfig
+            grep -Fq "config CPU_FREQ_DEFAULT_GOV_$gov" drivers/cpufreq/Kconfig
+          done
           grep -Fq 'config CPU_BOOST' drivers/cpufreq/Kconfig
-          grep -Fq 'config IOSCHED_CFQ' block/Kconfig.iosched
-          grep -Fq 'config IOSCHED_NOOP' block/Kconfig.iosched
-          grep -Fq 'config IOSCHED_DEADLINE' block/Kconfig.iosched
-          grep -Fq 'config TCP_CONG_BBR' net/ipv4/Kconfig
-          grep -Fq 'config DEFAULT_BBR' net/ipv4/Kconfig
+
+          for sched in CFQ NOOP DEADLINE; do
+            grep -Fq "config IOSCHED_$sched" block/Kconfig.iosched
+          done
+          grep -Fq 'config DEFAULT_IOSCHED' block/Kconfig.iosched
+
+          for tcp_cc in BIC CUBIC WESTWOOD HTCP HSTCP HYBLA VEGAS NV SCALABLE LP VENO YEAH ILLINOIS DCTCP CDG BBR; do
+            grep -Fq "config TCP_CONG_$tcp_cc" net/ipv4/Kconfig
+          done
+          for def in BIC CUBIC HTCP HYBLA VEGAS VENO WESTWOOD DCTCP CDG BBR RENO; do
+            grep -Fq "config DEFAULT_$def" net/ipv4/Kconfig
+          done
           grep -Fq 'config DEFAULT_TCP_CONG' net/ipv4/Kconfig
           grep -Fq 'config ZRAM_WRITEBACK' drivers/block/zram/Kconfig
           grep -Fq 'config ZRAM_LRU_WRITEBACK' drivers/block/zram/Kconfig
@@ -227,13 +652,14 @@ jobs:
           set -euxo pipefail
           rm -rf out
 
-          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" a11q_open_defconfig
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" HOSTCC="$HOSTCC" HOSTCXX="$HOSTCXX" HOSTLD="$HOSTLD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" a11q_open_defconfig
 
           KERNEL_NAME_SLUG="$(printf '%s' "$KERNEL_NAME_INPUT" | LC_ALL=C sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
-          [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="Kazera-M11-A11"
+          [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="NOCTURNE-LIMITED"
           scripts/config --file out/.config --set-str LOCALVERSION "-$KERNEL_NAME_SLUG"
           scripts/config --file out/.config --disable LOCALVERSION_AUTO
           printf 'KERNEL_NAME_SLUG=%s\n' "$KERNEL_NAME_SLUG" >> "$GITHUB_ENV"
+
 
           scripts/config --file out/.config --enable ARCH_ZQL1871
           scripts/config --file out/.config --enable ARCH_SDM450
@@ -298,31 +724,37 @@ jobs:
               ;;
           esac
 
-          if [ "$CPU_GOV" != "stock" ]; then
-            for gov in PERFORMANCE POWERSAVE USERSPACE ONDEMAND CONSERVATIVE SCHEDUTIL INTERACTIVE; do
-              scripts/config --file out/.config --disable "CPU_FREQ_GOV_$gov" || true
-              scripts/config --file out/.config --disable "CPU_FREQ_DEFAULT_GOV_$gov" || true
-            done
-          fi
+          # Keep every CPUFreq governor present in drivers/cpufreq/Kconfig built-in.
+          # The workflow choice changes only the default governor, not availability.
+          for gov in PERFORMANCE POWERSAVE USERSPACE ONDEMAND CONSERVATIVE SCHEDUTIL INTERACTIVE; do
+            scripts/config --file out/.config --enable "CPU_FREQ_GOV_$gov"
+            scripts/config --file out/.config --disable "CPU_FREQ_DEFAULT_GOV_$gov" || true
+          done
 
           case "$CPU_GOV" in
             performance)
-              scripts/config --file out/.config --enable CPU_FREQ_GOV_PERFORMANCE
               scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_PERFORMANCE
               ;;
             schedutil)
-              scripts/config --file out/.config --enable CPU_FREQ_GOV_SCHEDUTIL
               scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_SCHEDUTIL
               ;;
             interactive)
-              scripts/config --file out/.config --enable CPU_FREQ_GOV_INTERACTIVE
               scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_INTERACTIVE
               ;;
             ondemand)
-              scripts/config --file out/.config --enable CPU_FREQ_GOV_ONDEMAND
               scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_ONDEMAND
               ;;
+            conservative)
+              scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_CONSERVATIVE
+              ;;
+            powersave)
+              scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_POWERSAVE
+              ;;
+            userspace)
+              scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_USERSPACE
+              ;;
             stock)
+              # Keep the defconfig default governor while retaining all governors.
               ;;
             *)
               echo "Unsupported CPU governor: $CPU_GOV" >&2
@@ -330,23 +762,30 @@ jobs:
               ;;
           esac
 
+          # Keep every I/O scheduler present in block/Kconfig.iosched built-in.
+          # The workflow choice changes only the default scheduler.
+          for sched in CFQ NOOP DEADLINE; do
+            scripts/config --file out/.config --enable "IOSCHED_$sched"
+          done
+
           case "$IO_SCHED" in
             cfq)
-              scripts/config --file out/.config --enable IOSCHED_CFQ --disable IOSCHED_NOOP --disable IOSCHED_DEADLINE
-              scripts/config --file out/.config --enable DEFAULT_CFQ --disable DEFAULT_NOOP --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --disable DEFAULT_CFQ --disable DEFAULT_NOOP --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --enable DEFAULT_CFQ
               scripts/config --file out/.config --set-str DEFAULT_IOSCHED cfq
               ;;
             noop)
-              scripts/config --file out/.config --enable IOSCHED_NOOP --disable IOSCHED_CFQ --disable IOSCHED_DEADLINE
-              scripts/config --file out/.config --disable DEFAULT_CFQ --enable DEFAULT_NOOP --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --disable DEFAULT_CFQ --disable DEFAULT_NOOP --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --enable DEFAULT_NOOP
               scripts/config --file out/.config --set-str DEFAULT_IOSCHED noop
               ;;
             deadline)
-              scripts/config --file out/.config --enable IOSCHED_DEADLINE --disable IOSCHED_CFQ --disable IOSCHED_NOOP
-              scripts/config --file out/.config --disable DEFAULT_CFQ --disable DEFAULT_NOOP --enable DEFAULT_DEADLINE
+              scripts/config --file out/.config --disable DEFAULT_CFQ --disable DEFAULT_NOOP --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --enable DEFAULT_DEADLINE
               scripts/config --file out/.config --set-str DEFAULT_IOSCHED deadline
               ;;
             stock)
+              # Keep the defconfig default scheduler while retaining all schedulers.
               ;;
             *)
               echo "Unsupported I/O scheduler: $IO_SCHED" >&2
@@ -354,14 +793,34 @@ jobs:
               ;;
           esac
 
+          # Keep every TCP congestion control listed by net/ipv4/Kconfig built-in.
+          # BBR additionally requires the FQ pacing scheduler.
+          for tcp_cc in BIC CUBIC WESTWOOD HTCP HSTCP HYBLA VEGAS NV SCALABLE LP VENO YEAH ILLINOIS DCTCP CDG BBR; do
+            scripts/config --file out/.config --enable "TCP_CONG_$tcp_cc"
+          done
+          scripts/config --file out/.config --enable TCP_CONG_ADVANCED --enable NET_SCH_FQ
+
           case "$TCP_CONG" in
-            bbr)
-              scripts/config --file out/.config --enable TCP_CONG_ADVANCED --enable TCP_CONG_BBR --enable NET_SCH_FQ --enable DEFAULT_BBR --disable DEFAULT_CUBIC --set-str DEFAULT_TCP_CONG bbr
-              ;;
-            cubic)
-              scripts/config --file out/.config --enable TCP_CONG_ADVANCED --enable TCP_CONG_CUBIC --disable TCP_CONG_BBR --disable DEFAULT_BBR --enable DEFAULT_CUBIC --set-str DEFAULT_TCP_CONG cubic
+            bbr|cubic|reno|bic|westwood|htcp|hybla|vegas|veno|dctcp|cdg)
+              for def in BIC CUBIC HTCP HYBLA VEGAS VENO WESTWOOD DCTCP CDG BBR RENO; do
+                scripts/config --file out/.config --disable "DEFAULT_$def" || true
+              done
+              case "$TCP_CONG" in
+                bbr)      scripts/config --file out/.config --enable DEFAULT_BBR; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG bbr ;;
+                cubic)    scripts/config --file out/.config --enable DEFAULT_CUBIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic ;;
+                reno)     scripts/config --file out/.config --enable DEFAULT_RENO; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG reno ;;
+                bic)      scripts/config --file out/.config --enable DEFAULT_BIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG bic ;;
+                westwood) scripts/config --file out/.config --enable DEFAULT_WESTWOOD; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG westwood ;;
+                htcp)     scripts/config --file out/.config --enable DEFAULT_HTCP; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG htcp ;;
+                hybla)    scripts/config --file out/.config --enable DEFAULT_HYBLA; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG hybla ;;
+                vegas)    scripts/config --file out/.config --enable DEFAULT_VEGAS; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG vegas ;;
+                veno)     scripts/config --file out/.config --enable DEFAULT_VENO; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG veno ;;
+                dctcp)    scripts/config --file out/.config --enable DEFAULT_DCTCP; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG dctcp ;;
+                cdg)      scripts/config --file out/.config --enable DEFAULT_CDG; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cdg ;;
+              esac
               ;;
             stock)
+              # Keep the defconfig default congestion control while retaining all algorithms.
               ;;
             *)
               echo "Unsupported TCP congestion: $TCP_CONG" >&2
@@ -378,6 +837,60 @@ jobs:
 
           scripts/config --file out/.config --disable PSI
 
+          for gov in PERFORMANCE POWERSAVE USERSPACE ONDEMAND CONSERVATIVE SCHEDUTIL INTERACTIVE; do
+            test "$(grep -c "^CONFIG_CPU_FREQ_GOV_$gov=y$" out/.config)" -eq 1
+          done
+
+          for sched in CFQ NOOP DEADLINE; do
+            test "$(grep -c "^CONFIG_IOSCHED_$sched=y$" out/.config)" -eq 1
+          done
+
+          for tcp_cc in BIC CUBIC WESTWOOD HTCP HSTCP HYBLA VEGAS NV SCALABLE LP VENO YEAH ILLINOIS DCTCP CDG BBR; do
+            test "$(grep -c "^CONFIG_TCP_CONG_$tcp_cc=y$" out/.config)" -eq 1
+          done
+
+          case "$ROOT_IMPL" in
+            none)
+              scripts/config --file out/.config --disable KSU 2>/dev/null || true
+              scripts/config --file out/.config --disable KSU_MANUAL_HOOK 2>/dev/null || true
+              scripts/config --file out/.config --disable KSU_TRACEPOINT_HOOK 2>/dev/null || true
+              scripts/config --file out/.config --disable KSU_SUSFS 2>/dev/null || true
+              scripts/config --file out/.config --disable KPM 2>/dev/null || true
+              ;;
+            resukisu-susfs)
+              scripts/config --file out/.config --enable THREAD_INFO_IN_TASK
+              scripts/config --file out/.config --enable KSU
+              scripts/config --file out/.config --disable KSU_MANUAL_HOOK 2>/dev/null || true
+              scripts/config --file out/.config --disable KSU_TRACEPOINT_HOOK 2>/dev/null || true
+              scripts/config --file out/.config --enable KSU_SUSFS
+
+              # Core SUSFS features supported by this Samsung 4.9.319 tree.
+              for susfs_cfg in \
+                KSU_SUSFS_SUS_PATH \
+                KSU_SUSFS_SUS_MOUNT \
+                KSU_SUSFS_SPOOF_UNAME \
+                KSU_SUSFS_ENABLE_LOG \
+                KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS; do
+                scripts/config --file out/.config --enable "$susfs_cfg"
+              done
+
+              # These features require newer/different 4.9 source layouts and
+              # are disabled rather than compiling partial or broken hooks.
+              for susfs_cfg in \
+                KSU_SUSFS_SUS_KSTAT \
+                KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+                KSU_SUSFS_OPEN_REDIRECT \
+                KSU_SUSFS_SUS_MAP; do
+                scripts/config --file out/.config --disable "$susfs_cfg"
+              done
+              scripts/config --file out/.config --disable KPM
+              ;;
+            *)
+              echo "Unsupported root implementation: $ROOT_IMPL" >&2
+              exit 1
+              ;;
+          esac
+
           if [ "$CORTEX_TUNE" = "on" ]; then
             KCFLAGS="-mcpu=cortex-a53+crypto"
           else
@@ -385,9 +898,46 @@ jobs:
           fi
           printf "%s\n" "KCFLAGS=$KCFLAGS" > out/kazera-build-env.txt
 
-          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" olddefconfig
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" HOSTCC="$HOSTCC" HOSTCXX="$HOSTCXX" HOSTLD="$HOSTLD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" olddefconfig
 
-          grep -E "^(CONFIG_KPROBES=|CONFIG_KALLSYMS_ALL=|CONFIG_HZ=|CONFIG_HZ_|CONFIG_CPU_FREQ_DEFAULT_GOV=|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_IOSCHED=|CONFIG_ZRAM_WRITEBACK=|CONFIG_PREEMPT|CONFIG_PSI=|CONFIG_LOCALVERSION=)" out/.config || true
+          grep -E "^(CONFIG_KSU=|CONFIG_KSU_MANUAL_HOOK=|CONFIG_KSU_SUSFS=|CONFIG_KSU_SUSFS_SUS_PATH=|CONFIG_KSU_SUSFS_SUS_MOUNT=|CONFIG_KSU_SUSFS_SUS_KSTAT=|CONFIG_KSU_SUSFS_SPOOF_UNAME=|CONFIG_KSU_SUSFS_ENABLE_LOG=|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=|CONFIG_KSU_SUSFS_OPEN_REDIRECT=|CONFIG_KSU_SUSFS_SUS_MAP=|CONFIG_KPM=|CONFIG_KPROBES=|CONFIG_KALLSYMS_ALL=|CONFIG_HZ=|CONFIG_HZ_|CONFIG_CPU_FREQ_DEFAULT_GOV_|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_(BIC|CUBIC|HTCP|HYBLA|VEGAS|VENO|WESTWOOD|DCTCP|CDG|BBR|RENO)=|CONFIG_DEFAULT_IOSCHED=|CONFIG_DEFAULT_(CFQ|NOOP|DEADLINE)=|CONFIG_CPU_FREQ_GOV_(PERFORMANCE|POWERSAVE|USERSPACE|ONDEMAND|CONSERVATIVE|SCHEDUTIL|INTERACTIVE)=|CONFIG_IOSCHED_(CFQ|NOOP|DEADLINE)=|CONFIG_TCP_CONG_(BIC|CUBIC|WESTWOOD|HTCP|HSTCP|HYBLA|VEGAS|NV|SCALABLE|LP|VENO|YEAH|ILLINOIS|DCTCP|CDG|BBR)=|CONFIG_ZRAM_WRITEBACK=|CONFIG_PREEMPT|CONFIG_PSI=|CONFIG_LOCALVERSION=)" out/.config || true
+
+          case "$ROOT_IMPL" in
+            none)
+              test "$(grep -c "^CONFIG_KSU=y$" out/.config || true)" -eq 0
+              test "$(grep -c "^CONFIG_KSU_SUSFS=y$" out/.config || true)" -eq 0
+              test "$(grep -c "^CONFIG_KPM=y$" out/.config || true)" -eq 0
+              ;;
+            resukisu-susfs)
+              test "$(grep -c "^CONFIG_KSU=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KSU_SUSFS=y$" out/.config)" -eq 1
+              test "$(grep -c "^CONFIG_KSU_MANUAL_HOOK=y$" out/.config || true)" -eq 0
+              test "$(grep -c "^CONFIG_KSU_TRACEPOINT_HOOK=y$" out/.config || true)" -eq 0
+              test "$(grep -c "^CONFIG_THREAD_INFO_IN_TASK=y$" out/.config)" -eq 1
+              for susfs_cfg in \
+                CONFIG_KSU_SUSFS_SUS_PATH \
+                CONFIG_KSU_SUSFS_SUS_MOUNT \
+                CONFIG_KSU_SUSFS_SPOOF_UNAME \
+                CONFIG_KSU_SUSFS_ENABLE_LOG \
+                CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS; do
+                test "$(grep -c "^${susfs_cfg}=y$" out/.config)" -eq 1
+              done
+              for susfs_cfg in \
+                CONFIG_KSU_SUSFS_SUS_KSTAT \
+                CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+                CONFIG_KSU_SUSFS_OPEN_REDIRECT \
+                CONFIG_KSU_SUSFS_SUS_MAP; do
+                test "$(grep -c "^${susfs_cfg}=y$" out/.config || true)" -eq 0
+              done
+              test "$(grep -c "^CONFIG_KPM=y$" out/.config || true)" -eq 0
+              test "$(grep -F '#define SUSFS_VERSION "v2.3.0"' include/linux/susfs.h | wc -l)" -eq 1
+              ;;
+            *)
+              echo "Unsupported root implementation: $ROOT_IMPL" >&2
+              exit 1
+              ;;
+          esac
+
           test "$(grep -c "^CONFIG_ARCH_ZQL1871=y$" out/.config)" -eq 1
           test "$(grep -c "^CONFIG_ARCH_SDM450=y$" out/.config)" -eq 1
           test "$(grep -c "^CONFIG_ARCH_MSM8953=y$" out/.config)" -eq 1
@@ -399,14 +949,15 @@ jobs:
 
           if [ "$CORTEX_TUNE" = "on" ]; then KCFLAGS="-mcpu=cortex-a53+crypto"; else KCFLAGS=""; fi
 
-          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" CLANG_PREFIX32="--prefix=/usr/bin/arm-linux-gnueabi-" KCFLAGS="$KCFLAGS" dtbs -j"$(nproc)"
-          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" CLANG_PREFIX32="--prefix=/usr/bin/arm-linux-gnueabi-" KCFLAGS="$KCFLAGS" Image.gz-dtb vmlinux -j"$(nproc)"
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="${KAZERA_LD:-$LD}" HOSTCC="$HOSTCC" HOSTCXX="$HOSTCXX" HOSTLD="$HOSTLD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" CLANG_PREFIX32="--prefix=/usr/bin/arm-linux-gnueabi-" KCFLAGS="$KCFLAGS" dtbs -j"$(nproc)"
+          make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="${KAZERA_LD:-$LD}" HOSTCC="$HOSTCC" HOSTCXX="$HOSTCXX" HOSTLD="$HOSTLD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" CLANG_PREFIX32="--prefix=/usr/bin/arm-linux-gnueabi-" KCFLAGS="$KCFLAGS" Image.gz-dtb vmlinux -j"$(nproc)"
           NM=llvm-nm scripts/mksysmap out/vmlinux out/System.map
 
           test -s out/arch/arm64/boot/Image.gz
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/vmlinux
           test -s out/System.map
+
           test -d out/arch/arm64/boot/dts/samsung
           test -n "$(find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print -quit)"
           find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print | sort
@@ -419,40 +970,15 @@ jobs:
 
           cp out/arch/arm64/boot/Image.gz-dtb package-input/Image.gz-dtb
 
-          {
-            echo "kernel_name=$KERNEL_NAME_INPUT"
-            echo "kernel_name_slug=$KERNEL_NAME_SLUG"
-            echo "clang=$CLANG_VERSION"
-            echo "performance_profile=$PERF_PROFILE"
-            echo "hz=$HZ_CHOICE"
-            echo "cpu_governor=$CPU_GOV"
-            echo "io_scheduler=$IO_SCHED"
-            echo "tcp_congestion=$TCP_CONG"
-            echo "zram_writeback=$ZRAM_WB"
-            echo "cortex_a53_tune=$CORTEX_TUNE"
-            echo "base_config=a11q_open_defconfig"
-            echo "target=Samsung Galaxy M11 / A11 (SDM450)"
-            echo "anykernel3_repo=$ANYKERNEL3_REPO"
-            echo "anykernel3_ref=$ANYKERNEL3_REF"
-            echo "kernel_release=$(make -s O=out kernelrelease)"
-            echo "git_commit=$GITHUB_SHA"
-          } > package-input/KAZERA_BUILD_INFO.txt
-
           test -s package-input/Image.gz-dtb
-          test -s package-input/KAZERA_BUILD_INFO.txt
-
       - name: Package AnyKernel3
         shell: bash
         run: |
           set -euxo pipefail
 
           test -s package-input/Image.gz-dtb
-          test -s package-input/KAZERA_BUILD_INFO.txt
-
-          KERNEL_NAME_INPUT="$(sed -n 's/^kernel_name=//p' package-input/KAZERA_BUILD_INFO.txt)"
-          KERNEL_NAME_SLUG="$(sed -n 's/^kernel_name_slug=//p' package-input/KAZERA_BUILD_INFO.txt)"
-          [ -n "$KERNEL_NAME_INPUT" ] || KERNEL_NAME_INPUT="Kazera M11/A11"
-          [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="Kazera-M11-A11"
+          [ -n "$KERNEL_NAME_INPUT" ] || KERNEL_NAME_INPUT="NOCTURNE-LIMITED"
+          [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="NOCTURNE-LIMITED"
 
           git clone --depth=1 "$ANYKERNEL3_REPO" .anykernel3
           git -C .anykernel3 fetch --depth=1 origin "$ANYKERNEL3_REF"
@@ -473,32 +999,28 @@ jobs:
           bash -n .anykernel3/anykernel.sh
 
           cp package-input/Image.gz-dtb .anykernel3/Image.gz-dtb
-          cp package-input/KAZERA_BUILD_INFO.txt .anykernel3/KAZERA_BUILD_INFO.txt
 
           python3 - <<'PY'
+          import os
           import pathlib
           import re
 
           path = pathlib.Path('.anykernel3/anykernel.sh')
           text = path.read_text(encoding='utf-8')
-          info = pathlib.Path('.anykernel3/KAZERA_BUILD_INFO.txt').read_text(encoding='utf-8')
-          match = re.search(r'^kernel_name=(.*)$', info, re.M)
-          kernel_name = (match.group(1).strip() if match else 'Kazera M11/A11')
+          kernel_name = os.environ.get('KERNEL_NAME_INPUT', 'NOCTURNE-LIMITED')
           kernel_name = kernel_name.replace(chr(13), ' ').replace(chr(10), ' ').replace(chr(39), '')
-          kernel_name = re.sub(r'\s+', ' ', kernel_name).strip() or 'Kazera M11/A11'
+          kernel_name = re.sub(r'\s+', ' ', kernel_name).strip() or 'NOCTURNE-LIMITED'
           text, count = re.subn(r'^kernel\.string=.*$', lambda _: 'kernel.string=' + kernel_name, text, count=1, flags=re.M)
           if count != 1:
               raise SystemExit('kernel.string line not found exactly once')
           path.write_text(text, encoding='utf-8')
           PY
-
           test -s .anykernel3/Image.gz-dtb
           bash -n .anykernel3/anykernel.sh
 
-          zip_path="$GITHUB_WORKSPACE/dist/$KERNEL_NAME_SLUG-AnyKernel3-$GITHUB_RUN_NUMBER.zip"
+          zip_path="$GITHUB_WORKSPACE/dist/$KERNEL_NAME_SLUG-AnyKernel3.zip"
           (
             cd .anykernel3
-            sha256sum Image.gz-dtb anykernel.sh KAZERA_BUILD_INFO.txt > KAZERA_SHA256SUMS
             zip -r9 "$zip_path" \
               anykernel.sh \
               Image.gz-dtb \
@@ -506,9 +1028,7 @@ jobs:
               tools \
               modules \
               patch \
-              ramdisk \
-              KAZERA_BUILD_INFO.txt \
-              KAZERA_SHA256SUMS
+              ramdisk
           )
 
           test -s "$zip_path"
@@ -522,13 +1042,13 @@ jobs:
             exit 1
           fi
 
-          test "$(find dist -maxdepth 1 -type f -name '*-AnyKernel3-*.zip' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -type f -name '*-AnyKernel3.zip' | wc -l)" -eq 1
 
       - name: Upload final AnyKernel3 ZIP
         uses: actions/upload-artifact@v7.0.1
         with:
           name: kazera-m11-anykernel3-${{ github.run_number }}
-          path: dist/*-AnyKernel3-*.zip
+          path: dist/*-AnyKernel3.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -537,7 +1057,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: build-kernel
-    if: needs.build-kernel.result == 'success' && inputs.telegram == 'on'
+    if: needs.build-kernel.result == 'success' && (inputs.telegram == 'on' || github.event_name == 'push')
 
     steps:
       - name: Download AnyKernel3 artifact
@@ -551,9 +1071,10 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CLANG_LABEL: ${{ needs.build-kernel.outputs.clang_label }}
         run: |
           set -euo pipefail
-          ZIP_PATH="$(find dist -maxdepth 1 -type f -name '*-AnyKernel3-*.zip' -print -quit)"
+          ZIP_PATH="$(find dist -maxdepth 1 -type f -name '*-AnyKernel3.zip' -print -quit)"
           test -n "$ZIP_PATH"
           test -s "$ZIP_PATH"
           test -n "$TELEGRAM_BOT_TOKEN" || { echo "TELEGRAM_BOT_TOKEN secret is missing." >&2; exit 1; }
@@ -566,15 +1087,40 @@ jobs:
             exit 1
           fi
 
+          case "$ROOT_IMPL" in
+            resukisu-susfs)
+              ROOT_INFO="ReSukiSU v${RESUKISU_RELEASE}_${RESUKISU_VERSION}"
+              ;;
+            none)
+              ROOT_INFO="None"
+              ;;
+            *)
+              ROOT_INFO="$ROOT_IMPL"
+              ;;
+          esac
 
-          RESPONSE="$(curl -fsS --retry 3 --retry-all-errors \
-            -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
-            -F "chat_id=$TELEGRAM_CHAT_ID" \
-            -F "document=@$ZIP_PATH;type=application/zip" \
-            -F "caption=$CAPTION")"
+          CAPTION="$(printf '%s\n' \
+            "Kernel: $(basename "$ZIP_PATH")" \
+            "Device: Samsung Galaxy M11/A11" \
+            "Kernel: 4.9.319" \
+            "Root: $ROOT_INFO" \
+            "Manager Support: MKSU, RKSU, KOWSU, SukiSU-Ultra, ReSukiSU" \
+            "SUSFS: $SUSFS_VERSION" \
+            "Hook: Inline" \
+            "Clang: $CLANG_LABEL" \
+            "Profile: $PERF_PROFILE" \
+            "HZ: $HZ_CHOICE" \
+            "CPU Governor: $CPU_GOV" \
+            "I/O Scheduler: $IO_SCHED" \
+            "TCP: $TCP_CONG" \
+            "Cortex-A53 Tune: $CORTEX_TUNE")"
 
-          printf '%s\n' "$RESPONSE" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
+          RESPONSE="$(curl -fsS --retry 3 --retry-all-errors -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" -F "chat_id=$TELEGRAM_CHAT_ID" -F "document=@$ZIP_PATH;type=application/zip" -F "caption=$CAPTION")"
+
+          if ! printf '%s\n' "$RESPONSE" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
             echo "Telegram API did not report success." >&2
             printf '%s\n' "$RESPONSE" >&2
             exit 1
-          }
+          fi
+
+          echo "Telegram upload completed successfully: $(basename "$ZIP_PATH")"
