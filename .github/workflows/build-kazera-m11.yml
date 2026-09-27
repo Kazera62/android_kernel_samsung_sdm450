@@ -198,6 +198,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
 
+    outputs:
+      clang_label: ${{ steps.select-clang.outputs.clang_label }}
     steps:
       - name: Checkout kernel
         uses: actions/checkout@v7.0.1
@@ -216,6 +218,7 @@ jobs:
             binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi zip unzip
 
       - name: Select and install Clang toolchain
+        id: select-clang
         shell: bash
         run: |
           set -euxo pipefail
@@ -477,6 +480,7 @@ jobs:
 
           printf 'clang_label=%s\n' "$CLANG_LABEL" >> "$GITHUB_ENV"
           printf 'clang_mode=%s\n' "$TOOLCHAIN_MODE" >> "$GITHUB_ENV"
+          printf 'clang_label=%s\n' "$CLANG_LABEL" >> "$GITHUB_OUTPUT"
 
           echo "Selected toolchain: $CLANG_LABEL"
       - name: Integrate selected root implementation
@@ -1071,6 +1075,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CLANG_LABEL: ${{ needs.build-kernel.outputs.clang_label }}
         run: |
           set -euo pipefail
           ZIP_PATH="$(find dist -maxdepth 1 -type f -name '*-AnyKernel3.zip' -print -quit)"
@@ -1106,7 +1111,7 @@ jobs:
             "Manager Support: MKSU, RKSU, KOWSU, SukiSU-Ultra, ReSukiSU" \
             "SUSFS: $SUSFS_VERSION" \
             "Hook: Inline" \
-            "Clang: $clang_label" \
+            "Clang: $CLANG_LABEL" \
             "Profile: $PERF_PROFILE" \
             "HZ: $HZ_CHOICE" \
             "CPU Governor: $CPU_GOV" \
