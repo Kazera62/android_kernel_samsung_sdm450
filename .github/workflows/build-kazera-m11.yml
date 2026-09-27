@@ -328,6 +328,15 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text(encoding="utf-8")
+              if new in s:
+                  return
+              if old not in s:
+                  raise SystemExit(f"Expected source pattern not found: {path}")
+              p.write_text(s.replace(old, new, 1), encoding="utf-8")
+
           def once(path, old, new, label, source=None):
               p = Path(path)
               s = p.read_text(encoding='utf-8')
