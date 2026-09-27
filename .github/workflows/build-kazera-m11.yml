@@ -38,17 +38,33 @@ on:
         required: true
         default: r416183b
         options:
+          # Verified/currently preferred
           - r416183b
-          - proton-clang-12
-          - zyc-16.0.6
-          - zyc-15.0.7
+          # Custom kernel toolchains
+          - proton-clang
           - zyc-14.0.6
+          - zyc-15.0.7
+          - zyc-16.0.6
+          - sdclang-8.0.6
+          # Newer AOSP toolchains (experimental on 4.9.319)
           - r450784e
           - r450784d
-          - sdclang-8.0.6
+          - r450784c
+          - r450784b
+          - r450784
+          - r445002
+          - r437112b
+          - r437112
+          - r433403b
+          - r433403
           - r428724
+          - r416183c
+          - r416183b1
+          - r416183
+          - r412851
           - r407598
           - r399163b
+          # Older AOSP toolchains
           - r383902b
           - r377782b
           - r370808
@@ -202,57 +218,128 @@ jobs:
 
           CLANG_LABEL="$CLANG_VERSION"
           TOOLCHAIN_MODE="aosp"
-          CLANG_BRANCH="main-kernel"
+          CLANG_BRANCH=""
           CLANG_DIR=""
 
           case "$CLANG_VERSION" in
             r416183b)
               CLANG_LABEL="AOSP Clang r416183b (Verified)"
+              CLANG_BRANCH="android12-qpr3-s1-release"
               CLANG_DIR="clang-r416183b"
               ;;
-            r377782b)
-              CLANG_LABEL="AOSP Clang r377782b"
-              CLANG_DIR="clang-r377782b"
+            r450784e)
+              CLANG_LABEL="AOSP Clang r450784e (Experimental)"
+              CLANG_BRANCH="android14-release"
+              CLANG_DIR="clang-r450784e"
               ;;
-            r383902b)
-              CLANG_LABEL="AOSP Clang r383902b"
-              CLANG_DIR="clang-r383902b"
+            r450784d)
+              CLANG_LABEL="AOSP Clang r450784d (Experimental)"
+              CLANG_BRANCH="android13-release"
+              CLANG_DIR="clang-r450784d"
+              ;;
+            r450784c)
+              CLANG_LABEL="AOSP Clang r450784c (Experimental)"
+              CLANG_BRANCH="android13-release"
+              CLANG_DIR="clang-r450784c"
+              ;;
+            r450784b)
+              CLANG_LABEL="AOSP Clang r450784b (Experimental)"
+              CLANG_BRANCH="android13-release"
+              CLANG_DIR="clang-r450784b"
+              ;;
+            r450784)
+              CLANG_LABEL="AOSP Clang r450784 (Experimental)"
+              CLANG_BRANCH="android13-release"
+              CLANG_DIR="clang-r450784"
+              ;;
+            r445002)
+              CLANG_LABEL="AOSP Clang r445002 (Experimental)"
+              CLANG_BRANCH="android13-release"
+              CLANG_DIR="clang-r445002"
+              ;;
+            r437112b)
+              CLANG_LABEL="AOSP Clang r437112b (Experimental)"
+              CLANG_BRANCH="android13-release"
+              CLANG_DIR="clang-r437112b"
+              ;;
+            r437112)
+              CLANG_LABEL="AOSP Clang r437112 (Experimental)"
+              CLANG_BRANCH="android13-release"
+              CLANG_DIR="clang-r437112"
+              ;;
+            r433403b)
+              CLANG_LABEL="AOSP Clang r433403b (Experimental)"
+              CLANG_BRANCH="android13-release"
+              CLANG_DIR="clang-r433403b"
+              ;;
+            r433403)
+              CLANG_LABEL="AOSP Clang r433403 (Experimental)"
+              CLANG_BRANCH="android13-release"
+              CLANG_DIR="clang-r433403"
+              ;;
+            r428724)
+              CLANG_LABEL="AOSP Clang r428724 (Experimental)"
+              CLANG_BRANCH="android13-release"
+              CLANG_DIR="clang-r428724"
+              ;;
+            r416183c)
+              CLANG_LABEL="AOSP Clang r416183c"
+              CLANG_BRANCH="android13-release"
+              CLANG_DIR="clang-r416183c"
+              ;;
+            r416183b1)
+              CLANG_LABEL="AOSP Clang r416183b1"
+              CLANG_BRANCH="android13-release"
+              CLANG_DIR="clang-r416183b1"
+              ;;
+            r416183)
+              CLANG_LABEL="AOSP Clang r416183"
+              CLANG_BRANCH="android13-release"
+              CLANG_DIR="clang-r416183"
+              ;;
+            r412851)
+              CLANG_LABEL="AOSP Clang r412851"
+              CLANG_BRANCH="android13-release"
+              CLANG_DIR="clang-r412851"
               ;;
             r407598)
               CLANG_LABEL="AOSP Clang r407598"
+              CLANG_BRANCH="android13-release"
               CLANG_DIR="clang-r407598"
               ;;
             r399163b)
               CLANG_LABEL="AOSP Clang r399163b"
+              CLANG_BRANCH="android13-release"
               CLANG_DIR="clang-r399163b"
               ;;
-            r428724)
-              CLANG_LABEL="AOSP Clang r428724"
-              CLANG_DIR="clang-r428724"
+            r383902b)
+              CLANG_LABEL="AOSP Clang r383902b"
+              CLANG_BRANCH="android11-qpr3-release"
+              CLANG_DIR="clang-r383902b"
               ;;
-            r450784e)
-              CLANG_LABEL="AOSP Clang r450784e (Experimental)"
-              CLANG_DIR="clang-r450784e"
-              ;;
-            r450784d)
-              CLANG_LABEL="AOSP Clang r450784d"
-              CLANG_DIR="clang-r450784d"
-              ;;
-            proton-clang-12)
-              CLANG_LABEL="Proton Clang 12 (4.9 compatible)"
-              TOOLCHAIN_MODE="proton"
-              ;;
-            r365631c)
-              CLANG_LABEL="AOSP Clang r365631c"
-              CLANG_DIR="clang-r365631c"
+            r377782b)
+              CLANG_LABEL="AOSP Clang r377782b"
+              CLANG_BRANCH="android11-qpr3-release"
+              CLANG_DIR="clang-r377782b"
               ;;
             r370808)
               CLANG_LABEL="AOSP Clang r370808"
+              CLANG_BRANCH="android11-qpr3-release"
               CLANG_DIR="clang-r370808"
+              ;;
+            r365631c)
+              CLANG_LABEL="AOSP Clang r365631c"
+              CLANG_BRANCH="android11-release"
+              CLANG_DIR="clang-r365631c"
               ;;
             r353983c)
               CLANG_LABEL="AOSP Clang r353983c"
+              CLANG_BRANCH="android10-release"
               CLANG_DIR="clang-r353983c"
+              ;;
+            proton-clang)
+              CLANG_LABEL="Proton Clang (custom / rolling)"
+              TOOLCHAIN_MODE="proton"
               ;;
             sdclang-8.0.6)
               CLANG_LABEL="Qualcomm SDClang 8.0.6"
@@ -261,20 +348,20 @@ jobs:
             zyc-14.0.6)
               CLANG_LABEL="ZyC Clang 14.0.6"
               TOOLCHAIN_MODE="zyc"
-              ZYC_RELEASE="14.0.6-20260619-release"
-              ZYC_TARBALL="Clang-14.0.6-20260619.tar.gz"
+              ZYC_RELEASE="14.0.6-20220724-release"
+              ZYC_TARBALL="Clang-14.0.6-20220724.tar.gz"
               ;;
             zyc-15.0.7)
               CLANG_LABEL="ZyC Clang 15.0.7"
               TOOLCHAIN_MODE="zyc"
-              ZYC_RELEASE="15.0.7-20260801-release"
-              ZYC_TARBALL="Clang-15.0.7-20260801.tar.gz"
+              ZYC_RELEASE="15.0.7-20260507-release"
+              ZYC_TARBALL="Clang-15.0.7-20260507.tar.gz"
               ;;
             zyc-16.0.6)
               CLANG_LABEL="ZyC Clang 16.0.6"
               TOOLCHAIN_MODE="zyc"
-              ZYC_RELEASE="16.0.6-20260807-release"
-              ZYC_TARBALL="Clang-16.0.6-20260807.tar.gz"
+              ZYC_RELEASE="16.0.6-20260510-release"
+              ZYC_TARBALL="Clang-16.0.6-20260510.tar.gz"
               ;;
             *)
               echo "Unsupported Clang: $CLANG_VERSION" >&2
@@ -283,11 +370,15 @@ jobs:
           esac
 
           if [ "$TOOLCHAIN_MODE" = "aosp" ]; then
+            test -n "$CLANG_BRANCH"
+            test -n "$CLANG_DIR"
+
             git clone --depth=1 --filter=blob:none --sparse --branch "$CLANG_BRANCH" \
               https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-toolchain
             git -C clang-toolchain sparse-checkout set "$CLANG_DIR"
 
             TOOLCHAIN_PATH="$TOOLCHAIN_ROOT/$CLANG_DIR"
+            test -d "clang-toolchain/$CLANG_DIR"
             mv "clang-toolchain/$CLANG_DIR" "$TOOLCHAIN_PATH"
             rm -rf clang-toolchain
 
@@ -300,7 +391,6 @@ jobs:
             command -v ld.lld
             clang --version
             ld.lld --version
-            printf 'KAZERA_LD=%s\n' "aarch64-linux-gnu-ld" >> "$GITHUB_ENV"
 
           elif [ "$TOOLCHAIN_MODE" = "zyc" ]; then
             TOOLCHAIN_PATH="$TOOLCHAIN_ROOT/$CLANG_VERSION"
@@ -320,24 +410,24 @@ jobs:
             command -v ld.lld
             clang --version
             ld.lld --version
-            printf 'KAZERA_LD=%s\n' "ld.lld" >> "$GITHUB_ENV"
 
           elif [ "$TOOLCHAIN_MODE" = "proton" ]; then
-            git clone --depth=1 https://gitlab.com/LeCmnGend/proton-clang.git proton-clang
+            git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
 
             TOOLCHAIN_PATH="$GITHUB_WORKSPACE/proton-clang"
             test -x "$TOOLCHAIN_PATH/bin/clang"
+            test -x "$TOOLCHAIN_PATH/bin/ld.lld"
             export PATH="$TOOLCHAIN_PATH/bin:$PATH"
             echo "$TOOLCHAIN_PATH/bin" >> "$GITHUB_PATH"
 
             command -v clang
-            command -v ld.lld || true
+            command -v ld.lld
             clang --version
-            printf 'KAZERA_LD=%s\n' "aarch64-linux-gnu-ld" >> "$GITHUB_ENV"
+            ld.lld --version
 
           else
             git clone --depth=1 --filter=blob:none --sparse \
-              https://github.com/pkm774/android-kernel-tools.git sdclang-tools
+              https://github.com/RyuujiX/android-kernel-tools.git sdclang-tools
             git -C sdclang-tools sparse-checkout set sdclang/linux-x86_64
 
             TOOLCHAIN_PATH="$GITHUB_WORKSPACE/sdclang-tools/sdclang/linux-x86_64"
@@ -347,9 +437,12 @@ jobs:
 
             command -v clang
             clang --version
-            printf 'KAZERA_LD=%s\n' "aarch64-linux-gnu-ld" >> "$GITHUB_ENV"
           fi
 
+          printf 'clang_label=%s\n' "$CLANG_LABEL" >> "$GITHUB_ENV"
+          printf 'clang_mode=%s\n' "$TOOLCHAIN_MODE" >> "$GITHUB_ENV"
+
+          echo "Selected toolchain: $CLANG_LABEL"
           printf 'clang_label=%s\n' "$CLANG_LABEL" >> "$GITHUB_ENV"
           printf 'clang_mode=%s\n' "$TOOLCHAIN_MODE" >> "$GITHUB_ENV"
 
