@@ -345,7 +345,8 @@ jobs:
               "fd = get_unused_fd_flags(O_CLOEXEC);",
               "fd = get_unused_fd_flags(0);",
           )
-          test "$(grep -F -c 'fd = get_unused_fd_flags(0);' KernelSU/kernel/supercall/supercall.c)" -eq 1
+          if "fd = get_unused_fd_flags(0);" not in Path("KernelSU/kernel/supercall/supercall.c").read_text(encoding="utf-8"):
+              raise SystemExit("SukiSU manager FD compatibility patch verification failed")
 
           # fs/exec.c: invoke SukiSU before the real exec path.
           once('fs/exec.c',
