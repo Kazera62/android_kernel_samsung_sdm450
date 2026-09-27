@@ -38,10 +38,20 @@ on:
         required: true
         default: r416183b
         options:
-          - r383902b
           - r416183b
-          - r370808
+          - sdclang-8.0.6
+          - zyc-14.0.6
+          - r377782b
+          - zyc-15.0.7
+          - zyc-16.0.6
+          - r383902b
+          - r407598
+          - r399163b
+          - r428724
+          - r450784e
           - r365631c
+          - r370808
+          - r353983c
       performance_profile:
         description: "Pilih preset scheduler, preemption, boost, dan WALT kernel."
         type: choice
@@ -171,38 +181,130 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
+
+          TOOLCHAIN_ROOT="$HOME/toolchains"
+          rm -rf "$TOOLCHAIN_ROOT" clang-toolchain sdclang-tools
+          mkdir -p "$TOOLCHAIN_ROOT"
+
+          CLANG_LABEL="$CLANG_VERSION"
+          TOOLCHAIN_MODE="aosp"
+          CLANG_BRANCH="main-kernel"
+          CLANG_DIR=""
+
           case "$CLANG_VERSION" in
-            r383902b|r370808|r365631c)
-              CLANG_BRANCH="android11-qpr3-release"
-              ;;
             r416183b)
-              CLANG_BRANCH="android12-qpr3-s1-release"
+              CLANG_DIR="clang-r416183b"
+              ;;
+            r377782b)
+              CLANG_DIR="clang-r377782b"
+              ;;
+            r383902b)
+              CLANG_DIR="clang-r383902b"
+              ;;
+            r407598)
+              CLANG_DIR="clang-r407598"
+              ;;
+            r399163b)
+              CLANG_DIR="clang-r399163b"
+              ;;
+            r428724)
+              CLANG_DIR="clang-r428724"
+              ;;
+            r450784e)
+              CLANG_DIR="clang-r450784e"
+              ;;
+            r365631c)
+              CLANG_DIR="clang-r365631c"
+              ;;
+            r370808)
+              CLANG_DIR="clang-r370808"
+              ;;
+            r353983c)
+              CLANG_DIR="clang-r353983c"
+              ;;
+            sdclang-8.0.6)
+              TOOLCHAIN_MODE="sdclang"
+              ;;
+            zyc-14.0.6)
+              TOOLCHAIN_MODE="zyc"
+              ZYC_RELEASE="14.0.6-20260619-release"
+              ZYC_TARBALL="Clang-14.0.6-20260619.tar.gz"
+              ;;
+            zyc-15.0.7)
+              TOOLCHAIN_MODE="zyc"
+              ZYC_RELEASE="15.0.7-20260801-release"
+              ZYC_TARBALL="Clang-15.0.7-20260801.tar.gz"
+              ;;
+            zyc-16.0.6)
+              TOOLCHAIN_MODE="zyc"
+              ZYC_RELEASE="16.0.6-20260807-release"
+              ZYC_TARBALL="Clang-16.0.6-20260807.tar.gz"
               ;;
             *)
               echo "Unsupported Clang: $CLANG_VERSION" >&2
               exit 1
               ;;
           esac
-          TOOLCHAIN_ROOT="$HOME/clang-$CLANG_VERSION"
-          rm -rf "$TOOLCHAIN_ROOT" clang-toolchain
-          if ! git clone --depth=1 --filter=blob:none --sparse --branch "$CLANG_BRANCH" https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-toolchain; then
+
+          if [ "$TOOLCHAIN_MODE" = "aosp" ]; then
+            git clone --depth=1 --filter=blob:none --sparse --branch "$CLANG_BRANCH" \
+              https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-toolchain
+            git -C clang-toolchain sparse-checkout set "$CLANG_DIR"
+
+            TOOLCHAIN_PATH="$TOOLCHAIN_ROOT/$CLANG_DIR"
+            mv "clang-toolchain/$CLANG_DIR" "$TOOLCHAIN_PATH"
             rm -rf clang-toolchain
-            git clone --depth=1 --sparse --branch "$CLANG_BRANCH" https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-toolchain
+
+            test -x "$TOOLCHAIN_PATH/bin/clang"
+            test -x "$TOOLCHAIN_PATH/bin/ld.lld"
+            export PATH="$TOOLCHAIN_PATH/bin:$PATH"
+            echo "$TOOLCHAIN_PATH/bin" >> "$GITHUB_PATH"
+
+            command -v clang
+            command -v ld.lld
+            clang --version
+            ld.lld --version
+            printf 'KAZERA_LD=%s\n' "aarch64-linux-gnu-ld" >> "$GITHUB_ENV"
+
+          elif [ "$TOOLCHAIN_MODE" = "zyc" ]; then
+            TOOLCHAIN_PATH="$TOOLCHAIN_ROOT/$CLANG_VERSION"
+            mkdir -p "$TOOLCHAIN_PATH"
+            curl -fL --retry 3 --retry-all-errors \
+              "https://github.com/ZyCromerZ/Clang/releases/download/$ZYC_RELEASE/$ZYC_TARBALL" \
+              -o "$TOOLCHAIN_PATH/$ZYC_TARBALL"
+            tar -xzf "$TOOLCHAIN_PATH/$ZYC_TARBALL" -C "$TOOLCHAIN_PATH"
+            rm -f "$TOOLCHAIN_PATH/$ZYC_TARBALL"
+
+            test -x "$TOOLCHAIN_PATH/bin/clang"
+            test -x "$TOOLCHAIN_PATH/bin/ld.lld"
+            export PATH="$TOOLCHAIN_PATH/bin:$PATH"
+            echo "$TOOLCHAIN_PATH/bin" >> "$GITHUB_PATH"
+
+            command -v clang
+            command -v ld.lld
+            clang --version
+            ld.lld --version
+            printf 'KAZERA_LD=%s\n' "ld.lld" >> "$GITHUB_ENV"
+
+          else
+            git clone --depth=1 --filter=blob:none --sparse \
+              https://github.com/pkm774/android-kernel-tools.git sdclang-tools
+            git -C sdclang-tools sparse-checkout set sdclang/linux-x86_64
+
+            TOOLCHAIN_PATH="$GITHUB_WORKSPACE/sdclang-tools/sdclang/linux-x86_64"
+            test -x "$TOOLCHAIN_PATH/bin/clang"
+            export PATH="$TOOLCHAIN_PATH/bin:$PATH"
+            echo "$TOOLCHAIN_PATH/bin" >> "$GITHUB_PATH"
+
+            command -v clang
+            clang --version
+            printf 'KAZERA_LD=%s\n' "aarch64-linux-gnu-ld" >> "$GITHUB_ENV"
           fi
-          CLANG_DIR="clang-$CLANG_VERSION"
-          git -C clang-toolchain sparse-checkout set "$CLANG_DIR"
-          test -x "clang-toolchain/$CLANG_DIR/bin/clang"
-          mv "clang-toolchain/$CLANG_DIR" "$TOOLCHAIN_ROOT"
-          rm -rf clang-toolchain
-          export PATH="$TOOLCHAIN_ROOT/bin:$PATH"
-          echo "$TOOLCHAIN_ROOT/bin" >> "$GITHUB_PATH"
-          hash -r
-          command -v clang
-          command -v ld.lld
-          clang --version
-          aarch64-linux-gnu-ld --version
-          aarch64-linux-gnu-gcc --version | head -n 1
-          arm-linux-gnueabi-gcc --version | head -n 1
+
+          printf 'clang_label=%s\n' "$CLANG_LABEL" >> "$GITHUB_ENV"
+          printf 'clang_mode=%s\n' "$TOOLCHAIN_MODE" >> "$GITHUB_ENV"
+
+          echo "Selected toolchain: $CLANG_LABEL"
       - name: Integrate selected root implementation
         if: env.ROOT_IMPL != 'none'
         shell: bash
