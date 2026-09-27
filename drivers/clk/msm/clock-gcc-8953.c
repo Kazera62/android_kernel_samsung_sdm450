@@ -4124,8 +4124,7 @@ static int kazera_gfx_sdm450_append_turbo(struct platform_device *pdev,
 	vdd->num_levels = new_levels;
 	vdd->cur_level = new_levels;
 
-	dev_info(&pdev->dev, "Kazera OC: SDM450 GPU 650 MHz voltage corner enabled
-");
+	dev_info(&pdev->dev, "Kazera OC: SDM450 GPU 650 MHz voltage corner enabled\n"
 	return 0;
 }
 
