@@ -20,7 +20,7 @@ on:
         description: "Kirim ZIP AnyKernel3 hasil build ke Telegram."
         type: choice
         required: true
-        default: "off"
+        default: "on"
         options:
           - "off"
           - "on"
@@ -645,7 +645,7 @@ jobs:
 
           test -s package-input/Image.gz-dtb
           [ -n "$KERNEL_NAME_INPUT" ] || KERNEL_NAME_INPUT="NOCTURNE-LIMITED"
-          [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="Kazera-M11-A11"
+          [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="NOCTURNE-LIMITED"
 
           git clone --depth=1 "$ANYKERNEL3_REPO" .anykernel3
           git -C .anykernel3 fetch --depth=1 origin "$ANYKERNEL3_REF"
@@ -674,9 +674,9 @@ jobs:
 
           path = pathlib.Path('.anykernel3/anykernel.sh')
           text = path.read_text(encoding='utf-8')
-          kernel_name = os.environ.get('KERNEL_NAME_INPUT', 'Kazera M11/A11')
+          kernel_name = os.environ.get('KERNEL_NAME_INPUT', 'NOCTURNE-LIMITED')
           kernel_name = kernel_name.replace(chr(13), ' ').replace(chr(10), ' ').replace(chr(39), '')
-          kernel_name = re.sub(r'\s+', ' ', kernel_name).strip() or 'Kazera M11/A11'
+          kernel_name = re.sub(r'\s+', ' ', kernel_name).strip() or 'NOCTURNE-LIMITED'
           text, count = re.subn(r'^kernel\.string=.*$', lambda _: 'kernel.string=' + kernel_name, text, count=1, flags=re.M)
           if count != 1:
               raise SystemExit('kernel.string line not found exactly once')
