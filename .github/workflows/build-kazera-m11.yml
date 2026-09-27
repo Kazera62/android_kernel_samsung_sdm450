@@ -337,6 +337,16 @@ jobs:
                   raise SystemExit(f'manual hook anchor missing: {label}')
               p.write_text(s.replace(old, new, 1), encoding='utf-8')
 
+          # SukiSU Manager FD detection compatibility for older/non-GKI kernels.
+          # A reported SukiSU Manager detection issue on non-GKI kernels was fixed
+          # by allocating the KSU FD without O_CLOEXEC.
+          replace_once(
+              "KernelSU/kernel/supercall/supercall.c",
+              "fd = get_unused_fd_flags(O_CLOEXEC);",
+              "fd = get_unused_fd_flags(0);",
+          )
+          test "$(grep -F -c 'fd = get_unused_fd_flags(0);' KernelSU/kernel/supercall/supercall.c)" -eq 1
+
           # fs/exec.c: invoke SukiSU before the real exec path.
           once('fs/exec.c',
                '''static int do_execveat_common(int fd, struct filename *filename,''',
