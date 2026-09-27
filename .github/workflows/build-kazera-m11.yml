@@ -159,6 +159,9 @@ concurrency:
 env:
   KERNEL_NAME_INPUT: ${{ inputs.kernel_name || 'NOCTURNE-LIMITED' }}
   KERNEL_DEFAULT_HOSTNAME: "Zenata@Github"
+  # mkcompile_h combines these as LINUX_COMPILE_BY@LINUX_COMPILE_HOST.
+  KBUILD_BUILD_USER: "Zenata"
+  KBUILD_BUILD_HOST: "Github"
   TELEGRAM_ENABLE: ${{ inputs.telegram || 'on' }}
   ROOT_IMPL: ${{ inputs.root || 'resukisu-susfs' }}
   RESUKISU_RELEASE: 4.2.0
@@ -965,6 +968,12 @@ jobs:
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/vmlinux
           test -s out/System.map
+
+          # Verify scripts/mkcompile_h picked up the intended compile identity.
+          test -s out/include/generated/compile.h
+          grep -Fq '#define LINUX_COMPILE_BY "Zenata"' out/include/generated/compile.h
+          grep -Fq '#define LINUX_COMPILE_HOST "Github"' out/include/generated/compile.h
+
           test -d out/arch/arm64/boot/dts/samsung
           test -n "$(find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print -quit)"
           find out/arch/arm64/boot/dts/samsung -maxdepth 1 \( -name "*.dtb" -o -name "*.dtbo" \) -type f -print | sort
