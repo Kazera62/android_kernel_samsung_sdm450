@@ -4085,6 +4085,50 @@ static int of_get_fmax_vdd_class(struct platform_device *pdev, struct clk *c,
 	return 0;
 }
 
+static int kazera_gfx_sdm450_append_turbo(struct platform_device *pdev,
+		struct clk *c)
+{
+	struct clk_vdd_class *vdd = c->vdd_class;
+	unsigned long *new_fmax;
+	int *new_uv, *new_votes;
+	int old_levels = vdd->num_levels;
+	int new_levels = old_levels + 1;
+
+	if (!of_device_is_compatible(pdev->dev.of_node, "qcom,gcc-gfx-sdm450"))
+		return 0;
+
+	if (old_levels <= 0 || c->num_fmax != old_levels)
+		return -EINVAL;
+
+	new_fmax = devm_kzalloc(&pdev->dev,
+			new_levels * sizeof(*new_fmax), GFP_KERNEL);
+	new_uv = devm_kzalloc(&pdev->dev,
+			new_levels * sizeof(*new_uv), GFP_KERNEL);
+	new_votes = devm_kzalloc(&pdev->dev,
+			new_levels * sizeof(*new_votes), GFP_KERNEL);
+	if (!new_fmax || !new_uv || !new_votes)
+		return -ENOMEM;
+
+	memcpy(new_fmax, c->fmax, old_levels * sizeof(*new_fmax));
+	memcpy(new_uv, vdd->vdd_uv, old_levels * sizeof(*new_uv));
+	memcpy(new_votes, vdd->level_votes, old_levels * sizeof(*new_votes));
+
+	new_fmax[old_levels] = 650000000UL;
+	/* Reuse the existing top SDM450 graphics regulator corner. */
+	new_uv[old_levels] = 7;
+
+	c->fmax = new_fmax;
+	c->num_fmax = new_levels;
+	vdd->vdd_uv = new_uv;
+	vdd->level_votes = new_votes;
+	vdd->num_levels = new_levels;
+	vdd->cur_level = new_levels;
+
+	dev_info(&pdev->dev, "Kazera OC: SDM450 GPU 650 MHz voltage corner enabled
+");
+	return 0;
+}
+
 static int msm_gcc_gfx_probe(struct platform_device *pdev)
 {
 	struct resource *res;
@@ -4137,6 +4181,10 @@ static int msm_gcc_gfx_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Unable to get gfx freq-corner mapping info\n");
 		return ret;
 	}
+
+	ret = kazera_gfx_sdm450_append_turbo(pdev, &gcc_oxili_gfx3d_clk.c);
+	if (ret)
+		return ret;
 
 	ret = of_msm_clock_register(pdev->dev.of_node, msm_clocks_gcc_gfx,
 				ARRAY_SIZE(msm_clocks_gcc_gfx));
