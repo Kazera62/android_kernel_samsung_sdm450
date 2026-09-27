@@ -120,6 +120,7 @@ env:
   KERNEL_NAME_INPUT: ${{ inputs.kernel_name || 'Kazera M11/A11' }}
   TELEGRAM_ENABLE: ${{ inputs.telegram || 'off' }}
   ROOT_IMPL: ${{ inputs.root || 'resukisu-susfs' }}
+  RESUKISU_RELEASE: 4.2.0
   RESUKISU_VERSION: 35172
   RESUKISU_REF: 6803643e19e2e6e8287f96461aabb93bdd6c47fa
   SUSFS_VERSION: v2.3.0
@@ -754,7 +755,7 @@ jobs:
 
           case "$ROOT_IMPL" in
             resukisu-susfs)
-              ROOT_INFO="ReSukiSU v$RESUKISU_VERSION"
+              ROOT_INFO="ReSukiSU v${RESUKISU_RELEASE}_${RESUKISU_VERSION}"
               ;;
             none)
               ROOT_INFO="None"
@@ -771,15 +772,13 @@ jobs:
             "Root: $ROOT_INFO" \
             "SUSFS: $SUSFS_VERSION" \
             "Hook: Inline" \
-            "KPM: Disabled" \
             "Clang: $CLANG_VERSION" \
             "Profile: $PERF_PROFILE" \
             "HZ: $HZ_CHOICE" \
             "CPU Governor: $CPU_GOV" \
             "I/O Scheduler: $IO_SCHED" \
             "TCP: $TCP_CONG" \
-            "ZRAM Writeback: $ZRAM_WB" \
-            "Build: #$GITHUB_RUN_NUMBER")"
+            "Cortex-A53 Tune: $CORTEX_TUNE")"
 
           RESPONSE="$(curl -fsS --retry 3 --retry-all-errors -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" -F "chat_id=$TELEGRAM_CHAT_ID" -F "document=@$ZIP_PATH;type=application/zip" -F "caption=$CAPTION")"
 
