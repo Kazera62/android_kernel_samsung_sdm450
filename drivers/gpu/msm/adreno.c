@@ -920,8 +920,11 @@ static void adreno_of_get_ca_target_pwrlevel(struct adreno_device *adreno_dev,
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	unsigned int ca_target_pwrlevel = 1;
 
-	of_property_read_u32(node, "qcom,ca-target-pwrlevel",
-		&ca_target_pwrlevel);
+	if (of_machine_is_compatible("qcom,sdm450"))
+		ca_target_pwrlevel = 4;
+	else
+		of_property_read_u32(node, "qcom,ca-target-pwrlevel",
+			&ca_target_pwrlevel);
 
 	if (ca_target_pwrlevel > device->pwrctrl.num_pwrlevels - 2)
 		ca_target_pwrlevel = 1;
