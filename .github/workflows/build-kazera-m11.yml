@@ -193,49 +193,63 @@ jobs:
 
           case "$CLANG_VERSION" in
             r416183b)
+              CLANG_LABEL="AOSP Clang r416183b (Verified)"
               CLANG_DIR="clang-r416183b"
               ;;
             r377782b)
+              CLANG_LABEL="AOSP Clang r377782b"
               CLANG_DIR="clang-r377782b"
               ;;
             r383902b)
+              CLANG_LABEL="AOSP Clang r383902b"
               CLANG_DIR="clang-r383902b"
               ;;
             r407598)
+              CLANG_LABEL="AOSP Clang r407598"
               CLANG_DIR="clang-r407598"
               ;;
             r399163b)
+              CLANG_LABEL="AOSP Clang r399163b"
               CLANG_DIR="clang-r399163b"
               ;;
             r428724)
+              CLANG_LABEL="AOSP Clang r428724"
               CLANG_DIR="clang-r428724"
               ;;
             r450784e)
+              CLANG_LABEL="AOSP Clang r450784e (Experimental)"
               CLANG_DIR="clang-r450784e"
               ;;
             r365631c)
+              CLANG_LABEL="AOSP Clang r365631c"
               CLANG_DIR="clang-r365631c"
               ;;
             r370808)
+              CLANG_LABEL="AOSP Clang r370808"
               CLANG_DIR="clang-r370808"
               ;;
             r353983c)
+              CLANG_LABEL="AOSP Clang r353983c"
               CLANG_DIR="clang-r353983c"
               ;;
             sdclang-8.0.6)
+              CLANG_LABEL="Qualcomm SDClang 8.0.6"
               TOOLCHAIN_MODE="sdclang"
               ;;
             zyc-14.0.6)
+              CLANG_LABEL="ZyC Clang 14.0.6"
               TOOLCHAIN_MODE="zyc"
               ZYC_RELEASE="14.0.6-20260619-release"
               ZYC_TARBALL="Clang-14.0.6-20260619.tar.gz"
               ;;
             zyc-15.0.7)
+              CLANG_LABEL="ZyC Clang 15.0.7"
               TOOLCHAIN_MODE="zyc"
               ZYC_RELEASE="15.0.7-20260801-release"
               ZYC_TARBALL="Clang-15.0.7-20260801.tar.gz"
               ;;
             zyc-16.0.6)
+              CLANG_LABEL="ZyC Clang 16.0.6"
               TOOLCHAIN_MODE="zyc"
               ZYC_RELEASE="16.0.6-20260807-release"
               ZYC_TARBALL="Clang-16.0.6-20260807.tar.gz"
@@ -875,7 +889,7 @@ jobs:
             "Manager Support: MKSU, RKSU, KOWSU, SukiSU-Ultra, ReSukiSU" \
             "SUSFS: $SUSFS_VERSION" \
             "Hook: Inline" \
-            "Clang: $CLANG_VERSION" \
+            "Clang: $clang_label" \
             "Profile: $PERF_PROFILE" \
             "HZ: $HZ_CHOICE" \
             "CPU Governor: $CPU_GOV" \
