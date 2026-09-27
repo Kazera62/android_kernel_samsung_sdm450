@@ -1009,39 +1009,39 @@ jobs:
           test -s .anykernel3/Image.gz-dtb
           test -s .anykernel3/oc-dtb
 
-          python3 - <<'PY
+          python3 - <<'PY'
           import os
           import pathlib
-          import re
 
           path = pathlib.Path('.anykernel3/anykernel.sh')
           text = path.read_text(encoding='utf-8')
           kernel_name = os.environ.get('KERNEL_NAME_INPUT', 'NOCTURNE-LIMITED')
           kernel_name = kernel_name.replace(chr(13), ' ').replace(chr(10), ' ').replace(chr(39), '')
-          kernel_name = re.sub(r'\s+', ' ', kernel_name).strip() or 'NOCTURNE-LIMITED'
-          text, count = re.subn(r'^kernel\.string=.*$', lambda _: 'kernel.string=' + kernel_name, text, count=1, flags=re.M)
-          if count != 1:
+          kernel_name = ' '.join(kernel_name.split()) or 'NOCTURNE-LIMITED'
+
+          lines = text.splitlines()
+          matches = [i for i, line in enumerate(lines) if line.startswith('kernel.string=')]
+          if len(matches) != 1:
               raise SystemExit('kernel.string line not found exactly once')
-          path.write_text(text, encoding='utf-8')
+          lines[matches[0]] = 'kernel.string=' + kernel_name
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
           PY
           test -s .anykernel3/Image.gz-dtb
           test -s .anykernel3/oc-dtb
           bash -n .anykernel3/anykernel.sh
 
           zip_path="$GITHUB_WORKSPACE/dist/$KERNEL_NAME_SLUG-AnyKernel3.zip"
-          (
-            cd .anykernel3
-            zip -r9 "$zip_path" \
-              anykernel.sh \
-              Image.gz-dtb \
-              oc-dtb \
-              META-INF \
-              tools \
-              modules \
-              patch \
-              ramdisk
-          )
-
+          cd .anykernel3
+          zip -r9 "$zip_path" \
+            anykernel.sh \
+            Image.gz-dtb \
+            oc-dtb \
+            META-INF \
+            tools \
+            modules \
+            patch \
+            ramdisk
+          cd "$GITHUB_WORKSPACE"
           test -s "$zip_path"
           unzip -tq "$zip_path"
           unzip -l "$zip_path" | grep -q "Image.gz-dtb"
