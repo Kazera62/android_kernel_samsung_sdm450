@@ -685,7 +685,7 @@ jobs:
           test -s .anykernel3/Image.gz-dtb
           bash -n .anykernel3/anykernel.sh
 
-          zip_path="$GITHUB_WORKSPACE/dist/$KERNEL_NAME_SLUG-AnyKernel3-$GITHUB_RUN_NUMBER.zip"
+          zip_path="$GITHUB_WORKSPACE/dist/$KERNEL_NAME_SLUG-AnyKernel3.zip"
           (
             cd .anykernel3
             zip -r9 "$zip_path" \
@@ -709,13 +709,13 @@ jobs:
             exit 1
           fi
 
-          test "$(find dist -maxdepth 1 -type f -name '*-AnyKernel3-*.zip' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -type f -name '*-AnyKernel3.zip' | wc -l)" -eq 1
 
       - name: Upload final AnyKernel3 ZIP
         uses: actions/upload-artifact@v7.0.1
         with:
           name: kazera-m11-anykernel3-${{ github.run_number }}
-          path: dist/*-AnyKernel3-*.zip
+          path: dist/*-AnyKernel3.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -740,7 +740,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           set -euo pipefail
-          ZIP_PATH="$(find dist -maxdepth 1 -type f -name '*-AnyKernel3-*.zip' -print -quit)"
+          ZIP_PATH="$(find dist -maxdepth 1 -type f -name '*-AnyKernel3.zip' -print -quit)"
           test -n "$ZIP_PATH"
           test -s "$ZIP_PATH"
           test -n "$TELEGRAM_BOT_TOKEN" || { echo "TELEGRAM_BOT_TOKEN secret is missing." >&2; exit 1; }
@@ -770,8 +770,7 @@ jobs:
             "Device: Samsung Galaxy M11/A11" \
             "Kernel: 4.9.319" \
             "Root: $ROOT_INFO" \
-            "Root Manager (Uji Coba): MKSU, RKSU, KOWSU, SukiSU-Ultra, ReSukiSU" \
-            "Manager Status: Experimental / perlu pengujian per-manager" \
+            "Manager Support: MKSU, RKSU, KOWSU, SukiSU-Ultra, ReSukiSU" \
             "SUSFS: $SUSFS_VERSION" \
             "Hook: Inline" \
             "Clang: $CLANG_VERSION" \
@@ -780,7 +779,16 @@ jobs:
             "CPU Governor: $CPU_GOV" \
             "I/O Scheduler: $IO_SCHED" \
             "TCP: $TCP_CONG" \
-            "Cortex-A53 Tune: $CORTEX_TUNE")"
+            "Cortex-A53 Tune: $CORTEX_TUNE" \\n
+            "" \\n
+            "Changelog:" \\n
+            "- ReSukiSU + SUSFS integration" \\n
+            "- Inline Hook enabled" \\n
+            "- Performance scheduler profile and 1000 HZ" \\n
+            "- CPU Governor: $CPU_GOV / I/O: $IO_SCHED" \\n
+            "- TCP congestion control: $TCP_CONG" \\n
+            "- Cortex-A53 compiler tuning: $CORTEX_TUNE" \\n
+            "- AnyKernel3 packaging optimized for Galaxy M11/A11")"
 
           RESPONSE="$(curl -fsS --retry 3 --retry-all-errors -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" -F "chat_id=$TELEGRAM_CHAT_ID" -F "document=@$ZIP_PATH;type=application/zip" -F "caption=$CAPTION")"
 
