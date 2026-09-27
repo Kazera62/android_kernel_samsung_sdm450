@@ -464,7 +464,6 @@ jobs:
             CLANG_LABEL="$CLANG_LABEL ($ZYC_RELEASE)"
 
           elif [ "$TOOLCHAIN_MODE" = "proton" ]; then
-          elif [ "$TOOLCHAIN_MODE" = "proton" ]; then
             git clone --depth=1 https://github.com/kdrag0n/proton-clang.git proton-clang
 
             TOOLCHAIN_PATH="$GITHUB_WORKSPACE/proton-clang"
