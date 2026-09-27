@@ -443,10 +443,6 @@ jobs:
           printf 'clang_mode=%s\n' "$TOOLCHAIN_MODE" >> "$GITHUB_ENV"
 
           echo "Selected toolchain: $CLANG_LABEL"
-          printf 'clang_label=%s\n' "$CLANG_LABEL" >> "$GITHUB_ENV"
-          printf 'clang_mode=%s\n' "$TOOLCHAIN_MODE" >> "$GITHUB_ENV"
-
-          echo "Selected toolchain: $CLANG_LABEL"
       - name: Integrate selected root implementation
         if: env.ROOT_IMPL != 'none'
         shell: bash
@@ -1061,7 +1057,7 @@ jobs:
               ;;
           esac
 
-          CAPTION="$(printf '%s\\n' \
+          CAPTION="$(printf '%s\n' \
             "Kernel: $(basename "$ZIP_PATH")" \
             "Device: Samsung Galaxy M11/A11" \
             "Kernel: 4.9.319" \
