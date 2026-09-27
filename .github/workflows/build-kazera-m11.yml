@@ -1002,6 +1002,8 @@ jobs:
           grep -Fq "IS_SLOT_DEVICE=0" .anykernel3/anykernel.sh
           grep -Fq "do.modules=0" .anykernel3/anykernel.sh
           grep -Fq "do.systemless=0" .anykernel3/anykernel.sh
+          grep -Fq "patch_kernel_dtb_oc" .anykernel3/anykernel.sh
+          ! grep -Fq "QCDT container not found" .anykernel3/anykernel.sh
           bash -n .anykernel3/anykernel.sh
 
           cp package-input/Image .anykernel3/Image
@@ -1029,6 +1031,7 @@ jobs:
           PY
           test -s .anykernel3/Image
           test -s .anykernel3/oc-dtb
+          test ! -e .anykernel3/Image.gz-dtb
           bash -n .anykernel3/anykernel.sh
 
           zip_path="$GITHUB_WORKSPACE/dist/$KERNEL_NAME_SLUG-AnyKernel3.zip"
@@ -1046,6 +1049,7 @@ jobs:
           test -s "$zip_path"
           unzip -tq "$zip_path"
           unzip -l "$zip_path" | grep -q "Image"
+          ! unzip -l "$zip_path" | grep -q "Image.gz-dtb"
           unzip -l "$zip_path" | grep -q "oc-dtb"
           unzip -l "$zip_path" | grep -q "anykernel.sh"
           unzip -l "$zip_path" | grep -q "META-INF/com/google/android/update-binary"
