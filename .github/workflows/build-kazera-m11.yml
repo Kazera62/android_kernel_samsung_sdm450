@@ -15,7 +15,7 @@ on:
         description: "Nama kernel pada perangkat dan file ZIP."
         type: string
         required: true
-        default: "NOCTURNE-LIMITED"
+        default: "-NOCTURNE-LIMITED"
       telegram:
         description: "Kirim ZIP AnyKernel3 hasil build ke Telegram."
         type: choice
