@@ -765,22 +765,22 @@ jobs:
           esac
 
           CAPTION="$(cat <<EOF
-Kernel: $(basename "$ZIP_PATH")
-Device: Samsung Galaxy M11/A11
-Kernel: 4.9.319
-Root: $ROOT_INFO
-SUSFS: $SUSFS_VERSION
-Hook: Inline
-KPM: Disabled
-Clang: $CLANG_VERSION
-Profile: $PERF_PROFILE
-HZ: $HZ_CHOICE
-CPU Governor: $CPU_GOV
-I/O Scheduler: $IO_SCHED
-TCP: $TCP_CONG
-ZRAM Writeback: $ZRAM_WB
-Build: #$GITHUB_RUN_NUMBER
-EOF
+          Kernel: $(basename "$ZIP_PATH")
+          Device: Samsung Galaxy M11/A11
+          Kernel: 4.9.319
+          Root: $ROOT_INFO
+          SUSFS: $SUSFS_VERSION
+          Hook: Inline
+          KPM: Disabled
+          Clang: $CLANG_VERSION
+          Profile: $PERF_PROFILE
+          HZ: $HZ_CHOICE
+          CPU Governor: $CPU_GOV
+          I/O Scheduler: $IO_SCHED
+          TCP: $TCP_CONG
+          ZRAM Writeback: $ZRAM_WB
+          Build: #$GITHUB_RUN_NUMBER
+          EOF
 )"
 
           RESPONSE="$(curl -fsS --retry 3 --retry-all-errors -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" -F "chat_id=$TELEGRAM_CHAT_ID" -F "document=@$ZIP_PATH;type=application/zip" -F "caption=$CAPTION")"
