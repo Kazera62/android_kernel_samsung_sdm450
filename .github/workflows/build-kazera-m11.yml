@@ -108,15 +108,9 @@ on:
           - bic
           - westwood
           - htcp
-          - hstcp
           - hybla
           - vegas
-          - nv
-          - scalable
-          - lp
           - veno
-          - yeah
-          - illinois
           - dctcp
           - cdg
           - stock
@@ -655,7 +649,7 @@ jobs:
           scripts/config --file out/.config --enable TCP_CONG_ADVANCED --enable NET_SCH_FQ
 
           case "$TCP_CONG" in
-            bbr|cubic|reno|bic|westwood|htcp|hstcp|hybla|vegas|nv|scalable|lp|veno|yeah|illinois|dctcp|cdg)
+            bbr|cubic|reno|bic|westwood|htcp|hybla|vegas|veno|dctcp|cdg)
               for def in BIC CUBIC HTCP HYBLA VEGAS VENO WESTWOOD DCTCP CDG BBR RENO; do
                 scripts/config --file out/.config --disable "DEFAULT_$def" || true
               done
@@ -666,15 +660,9 @@ jobs:
                 bic)      scripts/config --file out/.config --enable DEFAULT_BIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG bic ;;
                 westwood) scripts/config --file out/.config --enable DEFAULT_WESTWOOD; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG westwood ;;
                 htcp)     scripts/config --file out/.config --enable DEFAULT_HTCP; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG htcp ;;
-                hstcp)    scripts/config --file out/.config --enable DEFAULT_CUBIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic ;;
                 hybla)    scripts/config --file out/.config --enable DEFAULT_HYBLA; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG hybla ;;
                 vegas)    scripts/config --file out/.config --enable DEFAULT_VEGAS; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG vegas ;;
-                nv)       scripts/config --file out/.config --enable DEFAULT_CUBIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic ;;
-                scalable) scripts/config --file out/.config --enable DEFAULT_CUBIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic ;;
-                lp)       scripts/config --file out/.config --enable DEFAULT_CUBIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic ;;
                 veno)     scripts/config --file out/.config --enable DEFAULT_VENO; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG veno ;;
-                yeah)     scripts/config --file out/.config --enable DEFAULT_CUBIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic ;;
-                illinois) scripts/config --file out/.config --enable DEFAULT_CUBIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic ;;
                 dctcp)    scripts/config --file out/.config --enable DEFAULT_DCTCP; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG dctcp ;;
                 cdg)      scripts/config --file out/.config --enable DEFAULT_CDG; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cdg ;;
               esac
