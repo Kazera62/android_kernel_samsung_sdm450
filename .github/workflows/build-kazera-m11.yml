@@ -15,7 +15,7 @@ on:
         description: "Nama kernel pada perangkat dan file ZIP."
         type: string
         required: true
-        default: "Kazera M11/A11"
+        default: "NOCTURNE-LIMITED"
       telegram:
         description: "Kirim ZIP AnyKernel3 hasil build ke Telegram."
         type: choice
@@ -117,8 +117,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  KERNEL_NAME_INPUT: ${{ inputs.kernel_name || 'Kazera M11/A11' }}
-  TELEGRAM_ENABLE: ${{ inputs.telegram || 'off' }}
+  KERNEL_NAME_INPUT: ${{ inputs.kernel_name || 'NOCTURNE-LIMITED' }}
+  TELEGRAM_ENABLE: ${{ inputs.telegram || 'on' }}
   ROOT_IMPL: ${{ inputs.root || 'resukisu-susfs' }}
   RESUKISU_RELEASE: 4.2.0
   RESUKISU_VERSION: 35172
@@ -369,7 +369,7 @@ jobs:
           make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" a11q_open_defconfig
 
           KERNEL_NAME_SLUG="$(printf '%s' "$KERNEL_NAME_INPUT" | LC_ALL=C sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
-          [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="Kazera-M11-A11"
+          [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="NOCTURNE-LIMITED"
           scripts/config --file out/.config --set-str LOCALVERSION "-$KERNEL_NAME_SLUG"
           scripts/config --file out/.config --disable LOCALVERSION_AUTO
           printf 'KERNEL_NAME_SLUG=%s\n' "$KERNEL_NAME_SLUG" >> "$GITHUB_ENV"
@@ -644,7 +644,7 @@ jobs:
           set -euxo pipefail
 
           test -s package-input/Image.gz-dtb
-          [ -n "$KERNEL_NAME_INPUT" ] || KERNEL_NAME_INPUT="Kazera M11/A11"
+          [ -n "$KERNEL_NAME_INPUT" ] || KERNEL_NAME_INPUT="NOCTURNE-LIMITED"
           [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="Kazera-M11-A11"
 
           git clone --depth=1 "$ANYKERNEL3_REPO" .anykernel3
@@ -724,7 +724,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: build-kernel
-    if: needs.build-kernel.result == 'success' && inputs.telegram == 'on'
+    if: needs.build-kernel.result == 'success' && (inputs.telegram == 'on' || github.event_name == 'push')
 
     steps:
       - name: Download AnyKernel3 artifact
