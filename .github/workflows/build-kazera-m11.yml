@@ -663,7 +663,9 @@ jobs:
 
           # Keep the kernel's default UTS hostname independent from its kernel name.
           scripts/config --file out/.config --set-str DEFAULT_HOSTNAME "$KERNEL_DEFAULT_HOSTNAME"
+          scripts/config --file out/.config --enable KAZERA_FORCE_HOSTNAME
           echo "Default kernel hostname: $KERNEL_DEFAULT_HOSTNAME"
+          echo "Android hostname override protection: enabled"
 
           scripts/config --file out/.config --enable ARCH_ZQL1871
           scripts/config --file out/.config --enable ARCH_SDM450
@@ -943,6 +945,7 @@ jobs:
           esac
 
           test "$(grep -c "^CONFIG_DEFAULT_HOSTNAME=\"$KERNEL_DEFAULT_HOSTNAME\"$" out/.config)" -eq 1
+          test "$(grep -c "^CONFIG_KAZERA_FORCE_HOSTNAME=y$" out/.config)" -eq 1
           test "$(grep -c "^CONFIG_ARCH_ZQL1871=y$" out/.config)" -eq 1
           test "$(grep -c "^CONFIG_ARCH_SDM450=y$" out/.config)" -eq 1
           test "$(grep -c "^CONFIG_ARCH_MSM8953=y$" out/.config)" -eq 1
