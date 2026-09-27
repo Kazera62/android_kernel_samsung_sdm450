@@ -1018,7 +1018,7 @@
 			< 1689600000 4>,
 			< 1804800000 5>,
 			< 1920000000 7>; /* Kazera OC */
-				qcom,speed6-bin-v0-cci =
+		qcom,speed6-bin-v0-cci =
 			<          0 0>,
 			<  261120000 1>,
 			<  414720000 2>,
@@ -1026,7 +1026,7 @@
 			<  675840000 4>,
 			<  721920000 5>,
 			<  768000000 7>; /* Kazera OC */
-				#clock-cells = <1>;
+		#clock-cells = <1>;
 	 };
 
 	msm_cpufreq: qcom,msm-cpufreq {
