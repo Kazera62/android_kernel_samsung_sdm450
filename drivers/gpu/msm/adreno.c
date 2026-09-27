@@ -1030,6 +1030,40 @@ static void adreno_of_get_initial_pwrlevel(struct adreno_device *adreno_dev,
 	pwr->default_pwrlevel = init_level;
 }
 
+static int adreno_kazera_sdm450_add_turbo(struct adreno_device *adreno_dev)
+{
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
+	struct kgsl_pwrlevel *level;
+	int i;
+
+	if (!of_machine_is_compatible("qcom,sdm450"))
+		return 0;
+
+	if (pwr->num_pwrlevels >= KGSL_MAX_PWRLEVELS)
+		return -ENOSPC;
+
+	/* Keep the stock SDM450 power-level data intact and prepend a
+	 * 650 MHz turbo level. The existing levels shift by one index,
+	 * matching the DT-based OC layout without replacing the stock DTB.
+	 */
+	for (i = pwr->num_pwrlevels; i > 0; i--)
+		pwr->pwrlevels[i] = pwr->pwrlevels[i - 1];
+
+	level = &pwr->pwrlevels[0];
+	level->gpu_freq = 650000000;
+	level->bus_freq = 10;
+	level->bus_min = 10;
+	level->bus_max = 10;
+	pwr->num_pwrlevels++;
+
+	/* Preserve the stock 320 MHz initial frequency after the index shift. */
+	pwr->active_pwrlevel = 5;
+	pwr->default_pwrlevel = 5;
+
+	return 0;
+}
+
 static int adreno_of_get_legacy_pwrlevels(struct adreno_device *adreno_dev,
 		struct device_node *parent)
 {
@@ -1045,7 +1079,18 @@ static int adreno_of_get_legacy_pwrlevels(struct adreno_device *adreno_dev,
 
 	ret = adreno_of_parse_pwrlevels(adreno_dev, node);
 	if (ret == 0)
+		ret = adreno_kazera_sdm450_add_turbo(adreno_dev);
+
+	if (ret == 0)
 		adreno_of_get_initial_pwrlevel(adreno_dev, parent);
+
+	if (ret == 0 && of_machine_is_compatible("qcom,sdm450")) {
+		/* The stock CA target was level 3 (400 MHz). After prepending
+		 * turbo, level 4 is the equivalent 400 MHz target.
+		 */
+		adreno_dev->dev.pwrscale.ctxt_aware_target_pwrlevel = 4;
+	}
+
 	return ret;
 }
 
