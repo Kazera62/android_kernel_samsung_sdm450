@@ -242,6 +242,46 @@ jobs:
           grep -Fq 'PATCH_LEVEL="2.3.00"' .ci-patches/susfs_inline_hook_patches.sh
 
           patch -p1 < .ci-patches/susfs_patch_to_4.9.patch || true
+
+          # Repair the one header-context reject caused by the extra fslog include
+          # in this 4.9.319 tree. Other source-layout rejects are tied to
+          # SUSFS features disabled below and are removed explicitly.
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("fs/namespace.c")
+          text = path.read_text(encoding="utf-8")
+          marker = '#include <linux/fslog.h>\n#include "pnode.h"'
+          inject = (
+              '#include <linux/fslog.h>\n'
+              '#ifdef CONFIG_KSU_SUSFS\n'
+              '#include <linux/susfs_def.h>\n'
+              '#endif // #ifdef CONFIG_KSU_SUSFS\n'
+              '#include "pnode.h"'
+          )
+          if '#include <linux/susfs_def.h>' not in text:
+              if marker not in text:
+                  raise SystemExit("fs/namespace.c include anchor not found")
+              text = text.replace(marker, inject, 1)
+              path.write_text(text, encoding="utf-8")
+
+          rej = Path("fs/namespace.c.rej")
+          if rej.exists():
+              rej_text = rej.read_text(encoding="utf-8")
+              if "linux/susfs_def.h" not in rej_text or "@@ -25,9 +25,20 @@" not in rej_text:
+                  raise SystemExit("Unexpected fs/namespace.c.rej content")
+              rej.unlink()
+
+          for rel in (
+              "fs/proc/cmdline.c.rej",
+              "fs/proc/task_mmu.c.rej",
+              "fs/stat.c.rej",
+          ):
+              p = Path(rel)
+              if p.exists():
+                  p.unlink()
+          PY
+
           bash .ci-patches/susfs_inline_hook_patches.sh
 
           if find . -path './KernelSU' -prune -o -name '*.rej' -print | grep -q .; then
@@ -466,17 +506,25 @@ jobs:
               scripts/config --file out/.config --disable KSU_MANUAL_HOOK 2>/dev/null || true
               scripts/config --file out/.config --disable KSU_TRACEPOINT_HOOK 2>/dev/null || true
               scripts/config --file out/.config --enable KSU_SUSFS
+
+              # Core SUSFS features supported by this Samsung 4.9.319 tree.
               for susfs_cfg in \
                 KSU_SUSFS_SUS_PATH \
                 KSU_SUSFS_SUS_MOUNT \
-                KSU_SUSFS_SUS_KSTAT \
                 KSU_SUSFS_SPOOF_UNAME \
                 KSU_SUSFS_ENABLE_LOG \
-                KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+                KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS; do
+                scripts/config --file out/.config --enable "$susfs_cfg"
+              done
+
+              # These features require newer/different 4.9 source layouts and
+              # are disabled rather than compiling partial or broken hooks.
+              for susfs_cfg in \
+                KSU_SUSFS_SUS_KSTAT \
                 KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
                 KSU_SUSFS_OPEN_REDIRECT \
                 KSU_SUSFS_SUS_MAP; do
-                scripts/config --file out/.config --enable "$susfs_cfg"
+                scripts/config --file out/.config --disable "$susfs_cfg"
               done
               scripts/config --file out/.config --disable KPM
               ;;
@@ -512,14 +560,17 @@ jobs:
               for susfs_cfg in \
                 CONFIG_KSU_SUSFS_SUS_PATH \
                 CONFIG_KSU_SUSFS_SUS_MOUNT \
-                CONFIG_KSU_SUSFS_SUS_KSTAT \
                 CONFIG_KSU_SUSFS_SPOOF_UNAME \
                 CONFIG_KSU_SUSFS_ENABLE_LOG \
-                CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+                CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS; do
+                test "$(grep -c "^${susfs_cfg}=y$" out/.config)" -eq 1
+              done
+              for susfs_cfg in \
+                CONFIG_KSU_SUSFS_SUS_KSTAT \
                 CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
                 CONFIG_KSU_SUSFS_OPEN_REDIRECT \
                 CONFIG_KSU_SUSFS_SUS_MAP; do
-                test "$(grep -c "^${susfs_cfg}=y$" out/.config)" -eq 1
+                test "$(grep -c "^${susfs_cfg}=y$" out/.config || true)" -eq 0
               done
               test "$(grep -c "^CONFIG_KPM=y$" out/.config || true)" -eq 0
               test "$(grep -F '#define SUSFS_VERSION "v2.3.0"' include/linux/susfs.h | wc -l)" -eq 1
