@@ -1225,23 +1225,6 @@ SYSCALL_DEFINE2(sethostname, char __user *, name, int, len)
 	if (!copy_from_user(tmp, name, len)) {
 		struct new_utsname *u;
 
-#ifdef CONFIG_KAZERA_FORCE_HOSTNAME
-		/*
-		 * Android's generic init.rc sets the hostname to "localhost"
-		 * during the boot trigger. Preserve the kernel-configured
-		 * hostname instead of letting that userspace default overwrite it.
-		 */
-		if (len == sizeof("localhost") - 1 &&
-		    !memcmp(tmp, "localhost", sizeof("localhost") - 1)) {
-			int forced_len = strlen(CONFIG_DEFAULT_HOSTNAME);
-
-			if (forced_len > __NEW_UTS_LEN)
-				forced_len = __NEW_UTS_LEN;
-			memcpy(tmp, CONFIG_DEFAULT_HOSTNAME, forced_len);
-			len = forced_len;
-		}
-#endif
-
 		down_write(&uts_sem);
 		u = utsname();
 		memcpy(u->nodename, tmp, len);
