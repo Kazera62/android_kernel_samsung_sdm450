@@ -284,6 +284,24 @@ jobs:
 
           bash .ci-patches/susfs_inline_hook_patches.sh
 
+          # Jack's 2.3.00 generic stat hook uses the newer parameter name
+          # `flags`; this kernel's 4.9.319 vfs_fstatat() uses `flag`.
+          # Repair only that generated call before compiling.
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("fs/stat.c")
+          text = path.read_text(encoding="utf-8")
+          old = "ksu_handle_stat(&dfd, &fname, &flags);"
+          new = "ksu_handle_stat(&dfd, &fname, &flag);"
+          count = text.count(old)
+          if count:
+              text = text.replace(old, new)
+              path.write_text(text, encoding="utf-8")
+          elif "ksu_handle_stat(&dfd, &fname, &flag);" not in text:
+              raise SystemExit("expected ksu_handle_stat stat.c hook was not generated")
+          PY
+
           if find . -path './KernelSU' -prune -o -name '*.rej' -print | grep -q .; then
             find . -path './KernelSU' -prune -o -name '*.rej' -print >&2
             exit 1
