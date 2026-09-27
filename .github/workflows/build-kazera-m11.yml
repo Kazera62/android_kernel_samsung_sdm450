@@ -39,18 +39,20 @@ on:
         default: r416183b
         options:
           - r416183b
-          - sdclang-8.0.6
-          - zyc-14.0.6
-          - r377782b
-          - zyc-15.0.7
+          - proton-clang-12
           - zyc-16.0.6
-          - r383902b
+          - zyc-15.0.7
+          - zyc-14.0.6
+          - r450784e
+          - r450784d
+          - sdclang-8.0.6
+          - r428724
           - r407598
           - r399163b
-          - r428724
-          - r450784e
-          - r365631c
+          - r383902b
+          - r377782b
           - r370808
+          - r365631c
           - r353983c
       performance_profile:
         description: "Pilih preset scheduler, preemption, boost, dan WALT kernel."
@@ -232,6 +234,14 @@ jobs:
               CLANG_LABEL="AOSP Clang r450784e (Experimental)"
               CLANG_DIR="clang-r450784e"
               ;;
+            r450784d)
+              CLANG_LABEL="AOSP Clang r450784d"
+              CLANG_DIR="clang-r450784d"
+              ;;
+            proton-clang-12)
+              CLANG_LABEL="Proton Clang 12 (4.9 compatible)"
+              TOOLCHAIN_MODE="proton"
+              ;;
             r365631c)
               CLANG_LABEL="AOSP Clang r365631c"
               CLANG_DIR="clang-r365631c"
@@ -311,6 +321,19 @@ jobs:
             clang --version
             ld.lld --version
             printf 'KAZERA_LD=%s\n' "ld.lld" >> "$GITHUB_ENV"
+
+          elif [ "$TOOLCHAIN_MODE" = "proton" ]; then
+            git clone --depth=1 https://gitlab.com/LeCmnGend/proton-clang.git proton-clang
+
+            TOOLCHAIN_PATH="$GITHUB_WORKSPACE/proton-clang"
+            test -x "$TOOLCHAIN_PATH/bin/clang"
+            export PATH="$TOOLCHAIN_PATH/bin:$PATH"
+            echo "$TOOLCHAIN_PATH/bin" >> "$GITHUB_PATH"
+
+            command -v clang
+            command -v ld.lld || true
+            clang --version
+            printf 'KAZERA_LD=%s\n' "aarch64-linux-gnu-ld" >> "$GITHUB_ENV"
 
           else
             git clone --depth=1 --filter=blob:none --sparse \
