@@ -968,39 +968,15 @@ jobs:
           rm -rf package-input dist .anykernel3
           mkdir -p package-input dist
 
-          # Samsung uses a multi-DTB boot image. Package the kernel and
-          # the complete DTB set separately so bootloader PMIC matching is preserved.
-          cp out/arch/arm64/boot/Image.gz package-input/Image.gz
+          cp out/arch/arm64/boot/Image.gz-dtb package-input/Image.gz-dtb
 
-          for dtb in msm8953 sdm450-pmi632 sdm450; do
-            test -s "out/arch/arm64/boot/dts/samsung/$dtb.dtb"
-          done
-
-          test "$(fdtget -t s 'out/arch/arm64/boot/dts/samsung/msm8953.dtb' / model)" = "Qualcomm Technologies, Inc. MSM8953 + PMI8950 SOC"
-          test "$(fdtget -t s 'out/arch/arm64/boot/dts/samsung/sdm450-pmi632.dtb' / model)" = "Qualcomm Technologies, Inc. SDM450 + PMI632 SOC"
-          test "$(fdtget -t s 'out/arch/arm64/boot/dts/samsung/sdm450.dtb' / model)" = "Qualcomm Technologies, Inc. SDM450 + PMI8950 SOC"
-
-          cat             out/arch/arm64/boot/dts/samsung/msm8953.dtb             out/arch/arm64/boot/dts/samsung/sdm450-pmi632.dtb             out/arch/arm64/boot/dts/samsung/sdm450.dtb             > package-input/dtb
-
-          test -s package-input/Image.gz
-          test -s package-input/dtb
-
-          python3 - <<'PY'
-          import struct
-          from pathlib import Path
-
-          data = Path("package-input/dtb").read_bytes()
-          magic = struct.pack(">I", 0xd00dfeed)
-          if data.count(magic) != 3:
-              raise SystemExit("Expected exactly 3 DTBs in the Samsung multi-DTB blob")
-          PY
+          test -s package-input/Image.gz-dtb
       - name: Package AnyKernel3
         shell: bash
         run: |
           set -euxo pipefail
 
-          test -s package-input/Image.gz
-          test -s package-input/dtb
+          test -s package-input/Image.gz-dtb
           [ -n "$KERNEL_NAME_INPUT" ] || KERNEL_NAME_INPUT="NOCTURNE-LIMITED"
           [ -n "$KERNEL_NAME_SLUG" ] || KERNEL_NAME_SLUG="NOCTURNE-LIMITED"
 
@@ -1022,11 +998,7 @@ jobs:
           grep -Fq "do.systemless=0" .anykernel3/anykernel.sh
           bash -n .anykernel3/anykernel.sh
 
-          cp package-input/Image.gz .anykernel3/Image.gz
-          cp package-input/dtb .anykernel3/dtb
-
-          test -s .anykernel3/Image.gz
-          test -s .anykernel3/dtb
+          cp package-input/Image.gz-dtb .anykernel3/Image.gz-dtb
 
           python3 - <<'PY'
           import os
@@ -1043,8 +1015,7 @@ jobs:
               raise SystemExit('kernel.string line not found exactly once')
           path.write_text(text, encoding='utf-8')
           PY
-          test -s .anykernel3/Image.gz
-          test -s .anykernel3/dtb
+          test -s .anykernel3/Image.gz-dtb
           bash -n .anykernel3/anykernel.sh
 
           zip_path="$GITHUB_WORKSPACE/dist/$KERNEL_NAME_SLUG-AnyKernel3.zip"
@@ -1052,8 +1023,7 @@ jobs:
             cd .anykernel3
             zip -r9 "$zip_path" \
               anykernel.sh \
-              Image.gz \
-              dtb \
+              Image.gz-dtb \
               META-INF \
               tools \
               modules \
@@ -1063,8 +1033,7 @@ jobs:
 
           test -s "$zip_path"
           unzip -tq "$zip_path"
-          unzip -l "$zip_path" | grep -q "Image.gz"
-          unzip -l "$zip_path" | grep -q "dtb"
+          unzip -l "$zip_path" | grep -q "Image.gz-dtb"
           unzip -l "$zip_path" | grep -q "anykernel.sh"
           unzip -l "$zip_path" | grep -q "META-INF/com/google/android/update-binary"
           unzip -l "$zip_path" | grep -q "tools/ak3-core.sh"
