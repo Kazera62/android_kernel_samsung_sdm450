@@ -798,4 +798,10 @@ jobs:
 
           printf '%s\n' "$RESPONSE" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
             echo "Telegram API did not report success." >&2
+            if ! printf '%s\n' "$RESPONSE" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+            echo "Telegram API did not report success." >&2
             printf '%s\n' "$RESPONSE" >&2
+            exit 1
+          fi
+
+          echo "Telegram upload completed successfully: $(basename "$ZIP_PATH")"
