@@ -660,8 +660,6 @@ jobs:
           scripts/config --file out/.config --disable LOCALVERSION_AUTO
           printf 'KERNEL_NAME_SLUG=%s\n' "$KERNEL_NAME_SLUG" >> "$GITHUB_ENV"
 
-          # Keep the kernel's default UTS hostname independent from its kernel name.
-          echo "Android hostname override protection: enabled"
 
           scripts/config --file out/.config --enable ARCH_ZQL1871
           scripts/config --file out/.config --enable ARCH_SDM450
