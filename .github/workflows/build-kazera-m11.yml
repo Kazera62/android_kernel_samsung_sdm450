@@ -1035,7 +1035,7 @@ jobs:
           cd .anykernel3
           zip -r9 "$zip_path" \
             anykernel.sh \
-            Image.gz-dtb \
+            Image \
             oc-dtb \
             META-INF \
             tools \
