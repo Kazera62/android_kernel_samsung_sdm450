@@ -175,7 +175,7 @@ env:
   ZRAM_WB: ${{ inputs.zram_writeback || 'on' }}
   CORTEX_TUNE: ${{ inputs.cortex_a53_tune || 'on' }}
   ANYKERNEL3_REPO: https://github.com/Kazera62/AnyKernel3.git
-  ANYKERNEL3_REF: 0ab72a279369da34644860a256eba3f2e8142dad
+  ANYKERNEL3_REF: 29ad222ff305d90702fa003a31a8d512b7ffc1ad
   ARCH: arm64
   SUBARCH: arm64
   CC: clang
@@ -969,8 +969,13 @@ jobs:
           mkdir -p package-input dist
 
           cp out/arch/arm64/boot/Image.gz-dtb package-input/Image.gz-dtb
+          # Hand AnyKernel3 the active SDM450 + PMI632 DTB payload.
+          # The installer replaces only QCDT index 1 inside the stock boot DT image.
+          cp out/arch/arm64/boot/dts/samsung/sdm450-pmi632.dtb package-input/oc-dtb
 
           test -s package-input/Image.gz-dtb
+          test -s package-input/oc-dtb
+          test "$(fdtget -t s 'out/arch/arm64/boot/dts/samsung/sdm450-pmi632.dtb' / model)" = "Qualcomm Technologies, Inc. SDM450 + PMI632 SOC"
       - name: Package AnyKernel3
         shell: bash
         run: |
@@ -999,8 +1004,12 @@ jobs:
           bash -n .anykernel3/anykernel.sh
 
           cp package-input/Image.gz-dtb .anykernel3/Image.gz-dtb
+          cp package-input/oc-dtb .anykernel3/oc-dtb
 
-          python3 - <<'PY'
+          test -s .anykernel3/Image.gz-dtb
+          test -s .anykernel3/oc-dtb
+
+          python3 - <<'PY
           import os
           import pathlib
           import re
@@ -1016,6 +1025,7 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
           test -s .anykernel3/Image.gz-dtb
+          test -s .anykernel3/oc-dtb
           bash -n .anykernel3/anykernel.sh
 
           zip_path="$GITHUB_WORKSPACE/dist/$KERNEL_NAME_SLUG-AnyKernel3.zip"
@@ -1024,6 +1034,7 @@ jobs:
             zip -r9 "$zip_path" \
               anykernel.sh \
               Image.gz-dtb \
+              oc-dtb \
               META-INF \
               tools \
               modules \
@@ -1034,6 +1045,7 @@ jobs:
           test -s "$zip_path"
           unzip -tq "$zip_path"
           unzip -l "$zip_path" | grep -q "Image.gz-dtb"
+          unzip -l "$zip_path" | grep -q "oc-dtb"
           unzip -l "$zip_path" | grep -q "anykernel.sh"
           unzip -l "$zip_path" | grep -q "META-INF/com/google/android/update-binary"
           unzip -l "$zip_path" | grep -q "tools/ak3-core.sh"
