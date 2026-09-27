@@ -82,6 +82,9 @@ on:
           - schedutil
           - interactive
           - ondemand
+          - conservative
+          - powersave
+          - userspace
           - stock
       io_scheduler:
         description: "Pilih block I/O scheduler default."
@@ -101,6 +104,21 @@ on:
         options:
           - bbr
           - cubic
+          - reno
+          - bic
+          - westwood
+          - htcp
+          - hstcp
+          - hybla
+          - vegas
+          - nv
+          - scalable
+          - lp
+          - veno
+          - yeah
+          - illinois
+          - dctcp
+          - cdg
           - stock
       zram_writeback:
         description: "Aktifkan zRAM writeback ke storage."
@@ -453,16 +471,23 @@ jobs:
           grep -Fq 'config PREEMPT_NONE' kernel/Kconfig.preempt
           grep -Fq 'config PREEMPT_VOLUNTARY' kernel/Kconfig.preempt
           grep -Fq 'config PREEMPT' kernel/Kconfig.preempt
-          grep -Fq 'config CPU_FREQ_GOV_PERFORMANCE' drivers/cpufreq/Kconfig
-          grep -Fq 'config CPU_FREQ_GOV_SCHEDUTIL' drivers/cpufreq/Kconfig
-          grep -Fq 'config CPU_FREQ_GOV_INTERACTIVE' drivers/cpufreq/Kconfig
-          grep -Fq 'config CPU_FREQ_GOV_ONDEMAND' drivers/cpufreq/Kconfig
+          for gov in PERFORMANCE POWERSAVE USERSPACE ONDEMAND CONSERVATIVE SCHEDUTIL INTERACTIVE; do
+            grep -Fq "config CPU_FREQ_GOV_$gov" drivers/cpufreq/Kconfig
+            grep -Fq "config CPU_FREQ_DEFAULT_GOV_$gov" drivers/cpufreq/Kconfig
+          done
           grep -Fq 'config CPU_BOOST' drivers/cpufreq/Kconfig
-          grep -Fq 'config IOSCHED_CFQ' block/Kconfig.iosched
-          grep -Fq 'config IOSCHED_NOOP' block/Kconfig.iosched
-          grep -Fq 'config IOSCHED_DEADLINE' block/Kconfig.iosched
-          grep -Fq 'config TCP_CONG_BBR' net/ipv4/Kconfig
-          grep -Fq 'config DEFAULT_BBR' net/ipv4/Kconfig
+
+          for sched in CFQ NOOP DEADLINE; do
+            grep -Fq "config IOSCHED_$sched" block/Kconfig.iosched
+          done
+          grep -Fq 'config DEFAULT_IOSCHED' block/Kconfig.iosched
+
+          for tcp_cc in BIC CUBIC WESTWOOD HTCP HSTCP HYBLA VEGAS NV SCALABLE LP VENO YEAH ILLINOIS DCTCP CDG BBR; do
+            grep -Fq "config TCP_CONG_$tcp_cc" net/ipv4/Kconfig
+          done
+          for def in BIC CUBIC HTCP HYBLA VEGAS VENO WESTWOOD DCTCP CDG BBR RENO; do
+            grep -Fq "config DEFAULT_$def" net/ipv4/Kconfig
+          done
           grep -Fq 'config DEFAULT_TCP_CONG' net/ipv4/Kconfig
           grep -Fq 'config ZRAM_WRITEBACK' drivers/block/zram/Kconfig
           grep -Fq 'config ZRAM_LRU_WRITEBACK' drivers/block/zram/Kconfig
@@ -553,31 +578,37 @@ jobs:
               ;;
           esac
 
-          if [ "$CPU_GOV" != "stock" ]; then
-            for gov in PERFORMANCE POWERSAVE USERSPACE ONDEMAND CONSERVATIVE SCHEDUTIL INTERACTIVE; do
-              scripts/config --file out/.config --disable "CPU_FREQ_GOV_$gov" || true
-              scripts/config --file out/.config --disable "CPU_FREQ_DEFAULT_GOV_$gov" || true
-            done
-          fi
+          # Keep every CPUFreq governor present in drivers/cpufreq/Kconfig built-in.
+          # The workflow choice changes only the default governor, not availability.
+          for gov in PERFORMANCE POWERSAVE USERSPACE ONDEMAND CONSERVATIVE SCHEDUTIL INTERACTIVE; do
+            scripts/config --file out/.config --enable "CPU_FREQ_GOV_$gov"
+            scripts/config --file out/.config --disable "CPU_FREQ_DEFAULT_GOV_$gov" || true
+          done
 
           case "$CPU_GOV" in
             performance)
-              scripts/config --file out/.config --enable CPU_FREQ_GOV_PERFORMANCE
               scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_PERFORMANCE
               ;;
             schedutil)
-              scripts/config --file out/.config --enable CPU_FREQ_GOV_SCHEDUTIL
               scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_SCHEDUTIL
               ;;
             interactive)
-              scripts/config --file out/.config --enable CPU_FREQ_GOV_INTERACTIVE
               scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_INTERACTIVE
               ;;
             ondemand)
-              scripts/config --file out/.config --enable CPU_FREQ_GOV_ONDEMAND
               scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_ONDEMAND
               ;;
+            conservative)
+              scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_CONSERVATIVE
+              ;;
+            powersave)
+              scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_POWERSAVE
+              ;;
+            userspace)
+              scripts/config --file out/.config --enable CPU_FREQ_DEFAULT_GOV_USERSPACE
+              ;;
             stock)
+              # Keep the defconfig default governor while retaining all governors.
               ;;
             *)
               echo "Unsupported CPU governor: $CPU_GOV" >&2
@@ -585,23 +616,30 @@ jobs:
               ;;
           esac
 
+          # Keep every I/O scheduler present in block/Kconfig.iosched built-in.
+          # The workflow choice changes only the default scheduler.
+          for sched in CFQ NOOP DEADLINE; do
+            scripts/config --file out/.config --enable "IOSCHED_$sched"
+          done
+
           case "$IO_SCHED" in
             cfq)
-              scripts/config --file out/.config --enable IOSCHED_CFQ --disable IOSCHED_NOOP --disable IOSCHED_DEADLINE
-              scripts/config --file out/.config --enable DEFAULT_CFQ --disable DEFAULT_NOOP --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --disable DEFAULT_CFQ --disable DEFAULT_NOOP --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --enable DEFAULT_CFQ
               scripts/config --file out/.config --set-str DEFAULT_IOSCHED cfq
               ;;
             noop)
-              scripts/config --file out/.config --enable IOSCHED_NOOP --disable IOSCHED_CFQ --disable IOSCHED_DEADLINE
-              scripts/config --file out/.config --disable DEFAULT_CFQ --enable DEFAULT_NOOP --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --disable DEFAULT_CFQ --disable DEFAULT_NOOP --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --enable DEFAULT_NOOP
               scripts/config --file out/.config --set-str DEFAULT_IOSCHED noop
               ;;
             deadline)
-              scripts/config --file out/.config --enable IOSCHED_DEADLINE --disable IOSCHED_CFQ --disable IOSCHED_NOOP
-              scripts/config --file out/.config --disable DEFAULT_CFQ --disable DEFAULT_NOOP --enable DEFAULT_DEADLINE
+              scripts/config --file out/.config --disable DEFAULT_CFQ --disable DEFAULT_NOOP --disable DEFAULT_DEADLINE
+              scripts/config --file out/.config --enable DEFAULT_DEADLINE
               scripts/config --file out/.config --set-str DEFAULT_IOSCHED deadline
               ;;
             stock)
+              # Keep the defconfig default scheduler while retaining all schedulers.
               ;;
             *)
               echo "Unsupported I/O scheduler: $IO_SCHED" >&2
@@ -609,14 +647,40 @@ jobs:
               ;;
           esac
 
+          # Keep every TCP congestion control listed by net/ipv4/Kconfig built-in.
+          # BBR additionally requires the FQ pacing scheduler.
+          for tcp_cc in BIC CUBIC WESTWOOD HTCP HSTCP HYBLA VEGAS NV SCALABLE LP VENO YEAH ILLINOIS DCTCP CDG BBR; do
+            scripts/config --file out/.config --enable "TCP_CONG_$tcp_cc"
+          done
+          scripts/config --file out/.config --enable TCP_CONG_ADVANCED --enable NET_SCH_FQ
+
           case "$TCP_CONG" in
-            bbr)
-              scripts/config --file out/.config --enable TCP_CONG_ADVANCED --enable TCP_CONG_BBR --enable NET_SCH_FQ --enable DEFAULT_BBR --disable DEFAULT_CUBIC --set-str DEFAULT_TCP_CONG bbr
-              ;;
-            cubic)
-              scripts/config --file out/.config --enable TCP_CONG_ADVANCED --enable TCP_CONG_CUBIC --disable TCP_CONG_BBR --disable DEFAULT_BBR --enable DEFAULT_CUBIC --set-str DEFAULT_TCP_CONG cubic
+            bbr|cubic|reno|bic|westwood|htcp|hstcp|hybla|vegas|nv|scalable|lp|veno|yeah|illinois|dctcp|cdg)
+              for def in BIC CUBIC HTCP HYBLA VEGAS VENO WESTWOOD DCTCP CDG BBR RENO; do
+                scripts/config --file out/.config --disable "DEFAULT_$def" || true
+              done
+              case "$TCP_CONG" in
+                bbr)      scripts/config --file out/.config --enable DEFAULT_BBR; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG bbr ;;
+                cubic)    scripts/config --file out/.config --enable DEFAULT_CUBIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic ;;
+                reno)     scripts/config --file out/.config --enable DEFAULT_RENO; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG reno ;;
+                bic)      scripts/config --file out/.config --enable DEFAULT_BIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG bic ;;
+                westwood) scripts/config --file out/.config --enable DEFAULT_WESTWOOD; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG westwood ;;
+                htcp)     scripts/config --file out/.config --enable DEFAULT_HTCP; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG htcp ;;
+                hstcp)    scripts/config --file out/.config --enable DEFAULT_CUBIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic ;;
+                hybla)    scripts/config --file out/.config --enable DEFAULT_HYBLA; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG hybla ;;
+                vegas)    scripts/config --file out/.config --enable DEFAULT_VEGAS; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG vegas ;;
+                nv)       scripts/config --file out/.config --enable DEFAULT_CUBIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic ;;
+                scalable) scripts/config --file out/.config --enable DEFAULT_CUBIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic ;;
+                lp)       scripts/config --file out/.config --enable DEFAULT_CUBIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic ;;
+                veno)     scripts/config --file out/.config --enable DEFAULT_VENO; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG veno ;;
+                yeah)     scripts/config --file out/.config --enable DEFAULT_CUBIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic ;;
+                illinois) scripts/config --file out/.config --enable DEFAULT_CUBIC; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cubic ;;
+                dctcp)    scripts/config --file out/.config --enable DEFAULT_DCTCP; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG dctcp ;;
+                cdg)      scripts/config --file out/.config --enable DEFAULT_CDG; scripts/config --file out/.config --set-str DEFAULT_TCP_CONG cdg ;;
+              esac
               ;;
             stock)
+              # Keep the defconfig default congestion control while retaining all algorithms.
               ;;
             *)
               echo "Unsupported TCP congestion: $TCP_CONG" >&2
@@ -632,6 +696,18 @@ jobs:
           fi
 
           scripts/config --file out/.config --disable PSI
+
+          for gov in PERFORMANCE POWERSAVE USERSPACE ONDEMAND CONSERVATIVE SCHEDUTIL INTERACTIVE; do
+            test "$(grep -c "^CONFIG_CPU_FREQ_GOV_$gov=y$" out/.config)" -eq 1
+          done
+
+          for sched in CFQ NOOP DEADLINE; do
+            test "$(grep -c "^CONFIG_IOSCHED_$sched=y$" out/.config)" -eq 1
+          done
+
+          for tcp_cc in BIC CUBIC WESTWOOD HTCP HSTCP HYBLA VEGAS NV SCALABLE LP VENO YEAH ILLINOIS DCTCP CDG BBR; do
+            test "$(grep -c "^CONFIG_TCP_CONG_$tcp_cc=y$" out/.config)" -eq 1
+          done
 
           case "$ROOT_IMPL" in
             none)
@@ -684,7 +760,7 @@ jobs:
 
           make O=out ARCH="$ARCH" SUBARCH="$SUBARCH" CC="$CC" LD="$LD" CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" olddefconfig
 
-          grep -E "^(CONFIG_KSU=|CONFIG_KSU_MANUAL_HOOK=|CONFIG_KSU_SUSFS=|CONFIG_KSU_SUSFS_SUS_PATH=|CONFIG_KSU_SUSFS_SUS_MOUNT=|CONFIG_KSU_SUSFS_SUS_KSTAT=|CONFIG_KSU_SUSFS_SPOOF_UNAME=|CONFIG_KSU_SUSFS_ENABLE_LOG=|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=|CONFIG_KSU_SUSFS_OPEN_REDIRECT=|CONFIG_KSU_SUSFS_SUS_MAP=|CONFIG_KPM=|CONFIG_KPROBES=|CONFIG_KALLSYMS_ALL=|CONFIG_HZ=|CONFIG_HZ_|CONFIG_CPU_FREQ_DEFAULT_GOV=|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_IOSCHED=|CONFIG_ZRAM_WRITEBACK=|CONFIG_PREEMPT|CONFIG_PSI=|CONFIG_LOCALVERSION=)" out/.config || true
+          grep -E "^(CONFIG_KSU=|CONFIG_KSU_MANUAL_HOOK=|CONFIG_KSU_SUSFS=|CONFIG_KSU_SUSFS_SUS_PATH=|CONFIG_KSU_SUSFS_SUS_MOUNT=|CONFIG_KSU_SUSFS_SUS_KSTAT=|CONFIG_KSU_SUSFS_SPOOF_UNAME=|CONFIG_KSU_SUSFS_ENABLE_LOG=|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=|CONFIG_KSU_SUSFS_OPEN_REDIRECT=|CONFIG_KSU_SUSFS_SUS_MAP=|CONFIG_KPM=|CONFIG_KPROBES=|CONFIG_KALLSYMS_ALL=|CONFIG_HZ=|CONFIG_HZ_|CONFIG_CPU_FREQ_DEFAULT_GOV_|CONFIG_DEFAULT_TCP_CONG=|CONFIG_DEFAULT_(BIC|CUBIC|HTCP|HYBLA|VEGAS|VENO|WESTWOOD|DCTCP|CDG|BBR|RENO)=|CONFIG_DEFAULT_IOSCHED=|CONFIG_DEFAULT_(CFQ|NOOP|DEADLINE)=|CONFIG_CPU_FREQ_GOV_(PERFORMANCE|POWERSAVE|USERSPACE|ONDEMAND|CONSERVATIVE|SCHEDUTIL|INTERACTIVE)=|CONFIG_IOSCHED_(CFQ|NOOP|DEADLINE)=|CONFIG_TCP_CONG_(BIC|CUBIC|WESTWOOD|HTCP|HSTCP|HYBLA|VEGAS|NV|SCALABLE|LP|VENO|YEAH|ILLINOIS|DCTCP|CDG|BBR)=|CONFIG_ZRAM_WRITEBACK=|CONFIG_PREEMPT|CONFIG_PSI=|CONFIG_LOCALVERSION=)" out/.config || true
 
           case "$ROOT_IMPL" in
             none)
