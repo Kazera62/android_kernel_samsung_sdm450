@@ -288,7 +288,7 @@ jobs:
             find . -path './KernelSU' -prune -o -name '*.rej' -print >&2
             exit 1
           fi
-          find . -path './KernelSU' -prune -o -name '*.orig' -delete
+          find . -name '*.orig' -not -path './KernelSU/*' -delete
 
           test -f include/linux/susfs.h
           grep -Fq '#define SUSFS_VERSION "v2.3.0"' include/linux/susfs.h
