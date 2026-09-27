@@ -624,31 +624,53 @@ static int of_get_fmax_vdd_class(struct platform_device *pdev, struct clk *c,
 	}
 
 	prop_len /= 2;
-	vdd->level_votes = devm_kzalloc(&pdev->dev,
-				prop_len * sizeof(*vdd->level_votes),
-					GFP_KERNEL);
-	if (!vdd->level_votes)
-		return -ENOMEM;
+	{
+		int dt_levels = prop_len;
+		int extra_levels = 0;
+		bool kazera_sdm450_oc = false;
+		bool cci_plan = strstr(prop_name, "-cci") != NULL;
 
-	vdd->vdd_uv = devm_kzalloc(&pdev->dev, prop_len * sizeof(int),
-					GFP_KERNEL);
-	if (!vdd->vdd_uv)
-		return -ENOMEM;
+		/* Keep the stock DTB intact: add the 1.92 GHz CPU / 768 MHz CCI
+		 * OPPs in the clock driver for the SDM450 speed-bin 6 target.
+		 */
+		if (of_machine_is_compatible("qcom,sdm450") &&
+			!strncmp(prop_name, "qcom,speed6-bin-v0-", 19)) {
+			kazera_sdm450_oc = true;
+			extra_levels = 1;
+		}
 
-	c->fmax = devm_kzalloc(&pdev->dev, prop_len * sizeof(unsigned long),
-					GFP_KERNEL);
-	if (!c->fmax)
-		return -ENOMEM;
+		prop_len = dt_levels + extra_levels;
+		vdd->level_votes = devm_kzalloc(&pdev->dev,
+				prop_len * sizeof(*vdd->level_votes), GFP_KERNEL);
+		if (!vdd->level_votes)
+			return -ENOMEM;
 
-	array = devm_kzalloc(&pdev->dev,
-			prop_len * sizeof(u32) * 2, GFP_KERNEL);
-	if (!array)
-		return -ENOMEM;
+		vdd->vdd_uv = devm_kzalloc(&pdev->dev,
+				prop_len * sizeof(int), GFP_KERNEL);
+		if (!vdd->vdd_uv)
+			return -ENOMEM;
 
-	of_property_read_u32_array(of, prop_name, array, prop_len * 2);
-	for (i = 0; i < prop_len; i++) {
-		c->fmax[i] = array[2 * i];
-		vdd->vdd_uv[i] = array[2 * i + 1];
+		c->fmax = devm_kzalloc(&pdev->dev,
+				prop_len * sizeof(unsigned long), GFP_KERNEL);
+		if (!c->fmax)
+			return -ENOMEM;
+
+		array = devm_kzalloc(&pdev->dev,
+				dt_levels * sizeof(u32) * 2, GFP_KERNEL);
+		if (!array)
+			return -ENOMEM;
+
+		of_property_read_u32_array(of, prop_name, array,
+				dt_levels * 2);
+		for (i = 0; i < dt_levels; i++) {
+			c->fmax[i] = array[2 * i];
+			vdd->vdd_uv[i] = array[2 * i + 1];
+		}
+
+		if (kazera_sdm450_oc) {
+			c->fmax[dt_levels] = cci_plan ? 768000000UL : 1920000000UL;
+			vdd->vdd_uv[dt_levels] = 7;
+		}
 	}
 
 	devm_kfree(&pdev->dev, array);
