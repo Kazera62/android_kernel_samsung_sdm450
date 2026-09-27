@@ -374,6 +374,7 @@ static struct cpufreq_frequency_table *cpufreq_parse_dt(struct device *dev,
 						char *tbl_name, int cpu)
 {
 	int ret, nf, i, j;
+	bool kazera_sdm450_oc;
 	u32 *data;
 	struct cpufreq_frequency_table *ftbl;
 
@@ -385,13 +386,28 @@ static struct cpufreq_frequency_table *cpufreq_parse_dt(struct device *dev,
 	if (nf == 0)
 		return ERR_PTR(-EINVAL);
 
-	data = devm_kzalloc(dev, nf * sizeof(*data), GFP_KERNEL);
+	kazera_sdm450_oc = of_machine_is_compatible("qcom,sdm450") &&
+			!strcmp(tbl_name, "qcom,cpufreq-table");
+
+	data = devm_kzalloc(dev, (nf + kazera_sdm450_oc) * sizeof(*data),
+			GFP_KERNEL);
 	if (!data)
 		return ERR_PTR(-ENOMEM);
 
 	ret = of_property_read_u32_array(dev->of_node, tbl_name, data, nf);
 	if (ret)
 		return ERR_PTR(ret);
+
+	if (kazera_sdm450_oc) {
+		/* Keep the table monotonic so cpufreq relation selection remains
+		 * identical to the stock table, with 1.92 GHz inserted at the
+		 * correct position.
+		 */
+		for (i = nf; i > 0 && data[i - 1] > 1920000; i--)
+			data[i] = data[i - 1];
+		data[i] = 1920000;
+		nf++;
+	}
 
 	ftbl = devm_kzalloc(dev, (nf + 1) * sizeof(*ftbl), GFP_KERNEL);
 	if (!ftbl)
