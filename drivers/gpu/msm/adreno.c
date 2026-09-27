@@ -1060,10 +1060,6 @@ static int adreno_kazera_sdm450_add_turbo(struct adreno_device *adreno_dev)
 	level->bus_max = 10;
 	pwr->num_pwrlevels++;
 
-	/* Preserve the stock 320 MHz initial frequency after the index shift. */
-	pwr->active_pwrlevel = 5;
-	pwr->default_pwrlevel = 5;
-
 	return 0;
 }
 
@@ -1088,6 +1084,11 @@ static int adreno_of_get_legacy_pwrlevels(struct adreno_device *adreno_dev,
 		adreno_of_get_initial_pwrlevel(adreno_dev, parent);
 
 	if (ret == 0 && of_machine_is_compatible("qcom,sdm450")) {
+		/* Stock SDM450 starts at 320 MHz (DT index 4). After adding
+		 * turbo at index 0, the equivalent stock level becomes index 5.
+		 */
+		adreno_dev->dev.pwrctrl.active_pwrlevel = 5;
+		adreno_dev->dev.pwrctrl.default_pwrlevel = 5;
 		/* The stock CA target was level 3 (400 MHz). After prepending
 		 * turbo, level 4 is the equivalent 400 MHz target.
 		 */
