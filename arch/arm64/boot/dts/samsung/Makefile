@@ -125,7 +125,8 @@ dtb-$(CONFIG_ARCH_MSM8937) += msm8937-pmi8950-mtp.dtb \
 	msm8937-interposer-sdm429-cdp.dtb \
 	msm8937-interposer-sdm429-mtp.dtb
 
-dtb-$(CONFIG_ARCH_SDM450) += sdm450.dtb sdm450-pmi632.dtb
+# Keep the complete Samsung SDM450/MSM8953 DTB set for multi-DTB boot images.
+dtb-$(CONFIG_ARCH_SDM450) += msm8953.dtb sdm450-pmi632.dtb sdm450.dtb
 
 dtb-$(CONFIG_ARCH_SDM439) += sdm439-mtp.dtb \
 	sdm439-cdp.dtb \
