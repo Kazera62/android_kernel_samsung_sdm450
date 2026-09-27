@@ -184,8 +184,11 @@ env:
   CROSS_COMPILE: aarch64-linux-gnu-
   CROSS_COMPILE_ARM32: arm-linux-gnueabi-
   # Keep Kbuild host tools on Ubuntu's native linker; custom Clang PATHs may ship old bin/ld.
-  HOSTCC: gcc
-  HOSTCXX: g++
+  # Kbuild 4.9 links host multi-object tools through HOSTCC/HOSTCXX,
+  # not HOSTLD. Force GCC/G++ to resolve the linker from /usr/bin even
+  # when a legacy Clang toolchain prepends its own bin/ to PATH.
+  HOSTCC: "gcc -B/usr/bin/"
+  HOSTCXX: "g++ -B/usr/bin/"
   HOSTLD: /usr/bin/ld.bfd
 
 jobs:
