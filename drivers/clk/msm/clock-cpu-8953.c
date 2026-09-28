@@ -668,7 +668,7 @@ static int of_get_fmax_vdd_class(struct platform_device *pdev, struct clk *c,
 		}
 
 		if (kazera_sdm450_oc) {
-			c->fmax[dt_levels] = cci_plan ? 768000000UL : 1920000000UL;
+			c->fmax[dt_levels] = cci_plan ? 806400000UL : 2016000000UL;
 			vdd->vdd_uv[dt_levels] = 7;
 		}
 	}
