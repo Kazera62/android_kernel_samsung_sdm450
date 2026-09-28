@@ -383,6 +383,19 @@ static int devfreq_cpufreq_get_freq(struct devfreq *df,
 	for_each_possible_cpu(cpu)
 		tgt_freq = max(tgt_freq, cpu_to_dev_freq(df, cpu));
 
+	/*
+	 * Kazera SDM450 DDR turbo: once the CPU reaches the Stage 2
+	 * 2.016 GHz ceiling, force the highest devbw vote (7325 MB/s).
+	 * This is a bandwidth vote, not a direct DRAM PLL write; RPM may
+	 * clamp it to its supported ceiling.
+	 */
+	if (of_machine_is_compatible("qcom,sdm450") &&
+		strstr(dev_name(df->dev.parent), "cpubw") &&
+		tgt_freq >= 2016000 &&
+		df->profile->freq_table &&
+		df->profile->max_state > 0)
+		tgt_freq = df->profile->freq_table[df->profile->max_state - 1];
+
 	if (node->timeout && tgt_freq < node->prev_tgt)
 		*freq = 0;
 	else
