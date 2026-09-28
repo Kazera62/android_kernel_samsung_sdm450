@@ -193,6 +193,24 @@ int devfreq_add_devbw(struct device *dev)
 
 		for (i = 0; i < len; i++)
 			p->freq_table[i] = data[i];
+
+		/*
+		 * Kazera SDM450 DDR turbo:
+		 * The native top devbw vote is 7104 MB/s, corresponding to the
+		 * stock 931.2 MHz DDR point. Replace that ceiling with a higher
+		 * experimental vote that is proportional to ~960 MHz.
+		 *
+		 * The RPM/bus framework may clamp this back to the highest native
+		 * point; runtime validation through bimc/clock debugfs is required.
+		 */
+		if (of_machine_is_compatible("qcom,sdm450") &&
+			len > 0 &&
+			(!strcmp(dev_name(dev), "qcom,cpubw") ||
+			 !strcmp(dev_name(dev), "qcom,mincpubw") ||
+			 !strcmp(dev_name(dev), "qcom,gpubw")) &&
+			p->freq_table[len - 1] == 7104)
+			p->freq_table[len - 1] = 7325;
+
 		p->max_state = len;
 	}
 
