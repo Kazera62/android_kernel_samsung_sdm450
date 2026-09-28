@@ -4114,7 +4114,7 @@ static int kazera_gfx_sdm450_append_turbo(struct platform_device *pdev,
 	memcpy(new_uv, vdd->vdd_uv, old_levels * sizeof(*new_uv));
 	memcpy(new_votes, vdd->level_votes, old_levels * sizeof(*new_votes));
 
-	new_fmax[old_levels] = 650000000UL;
+	new_fmax[old_levels] = 700000000UL;
 	/* Reuse the existing top SDM450 graphics regulator corner. */
 	new_uv[old_levels] = 7;
 
