@@ -130,6 +130,10 @@ static void _record_pwrevent(struct kgsl_device *device,
  */
 static unsigned long kgsl_get_bw(void)
 {
+	if (of_machine_is_compatible("qcom,sdm450") &&
+		last_vote_buslevel >= 10)
+		return 7325;
+
 	return ib_votes[last_vote_buslevel];
 }
 #endif
