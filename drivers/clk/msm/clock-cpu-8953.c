@@ -630,8 +630,8 @@ static int of_get_fmax_vdd_class(struct platform_device *pdev, struct clk *c,
 		bool kazera_sdm450_oc = false;
 		bool cci_plan = strstr(prop_name, "-cci") != NULL;
 
-		/* Keep the stock DTB intact: add the 1.92 GHz CPU / 768 MHz CCI
-		 * OPPs in the clock driver for the SDM450 speed-bin 6 target.
+		/* Keep the stock DTB intact: add the Kazera Stage 2
+		 * CPU/CCI OPPs in the clock driver for the SDM450 speed-bin 6 target.
 		 */
 		if (of_machine_is_compatible("qcom,sdm450") &&
 			!strncmp(prop_name, "qcom,speed6-bin-v0-", 19)) {
