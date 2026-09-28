@@ -1047,8 +1047,8 @@ static int adreno_kazera_sdm450_add_turbo(struct adreno_device *adreno_dev)
 		return -ENOSPC;
 
 	/* Keep the stock SDM450 power-level data intact and prepend a
-	 * 650 MHz turbo level. The existing levels shift by one index,
-	 * matching the DT-based OC layout without replacing the stock DTB.
+	 * 700 MHz turbo-OC level. The existing levels shift by one index,
+	 * without replacing the stock DTB.
 	 */
 	for (i = pwr->num_pwrlevels; i > 0; i--)
 		pwr->pwrlevels[i] = pwr->pwrlevels[i - 1];
