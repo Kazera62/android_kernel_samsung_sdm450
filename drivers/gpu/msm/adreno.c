@@ -1054,7 +1054,7 @@ static int adreno_kazera_sdm450_add_turbo(struct adreno_device *adreno_dev)
 		pwr->pwrlevels[i] = pwr->pwrlevels[i - 1];
 
 	level = &pwr->pwrlevels[0];
-	level->gpu_freq = 650000000;
+	level->gpu_freq = 700000000;
 	level->bus_freq = 10;
 	level->bus_min = 10;
 	level->bus_max = 10;
