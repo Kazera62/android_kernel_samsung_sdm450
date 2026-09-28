@@ -668,8 +668,11 @@ static int of_get_fmax_vdd_class(struct platform_device *pdev, struct clk *c,
 		}
 
 		if (kazera_sdm450_oc) {
-			c->fmax[dt_levels] = cci_plan ? 806400000UL : 2016000000UL;
-			vdd->vdd_uv[dt_levels] = 7;
+			/* Keep CPU at Stage 2 while allowing CCI to use the next
+			 * known SDM450-safe clock point from the native plan.
+			 */
+			c->fmax[dt_levels] = cci_plan ? 860160000UL : 2016000000UL;
+			vdd->vdd_uv[dt_levels] = cci_plan ? 8 : 7;
 		}
 	}
 
