@@ -400,12 +400,12 @@ static struct cpufreq_frequency_table *cpufreq_parse_dt(struct device *dev,
 
 	if (kazera_sdm450_oc) {
 		/* Keep the table monotonic so cpufreq relation selection remains
-		 * identical to the stock table, with 1.92 GHz inserted at the
-		 * correct position.
+		 * identical to the stock table, with the Stage 2 2.016 GHz
+		 * OPP inserted at the correct position.
 		 */
-		for (i = nf; i > 0 && data[i - 1] > 1920000; i--)
+		for (i = nf; i > 0 && data[i - 1] > 2016000; i--)
 			data[i] = data[i - 1];
-		data[i] = 1920000;
+		data[i] = 2016000;
 		nf++;
 	}
 
