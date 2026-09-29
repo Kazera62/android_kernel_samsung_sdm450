@@ -84,7 +84,7 @@ on:
         description: "Atur frekuensi timer kernel."
         type: choice
         required: true
-        default: 1000
+        default: "1000"
         options:
           - 100
           - 250
